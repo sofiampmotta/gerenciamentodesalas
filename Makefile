@@ -18,3 +18,17 @@ obj/%.o: src/%.c
 clean:
 	rm -rf obj bin/programa
 
+
+# ---------------------------------------------------------------- Testes
+# Testes do modulo de persistencia (nao precisa do GTK).
+# Rodam dentro de build/ para nao sujar a raiz do projeto.
+TEST_BIN = build/test_persistencia
+
+$(TEST_BIN): src/persistencia.c tests/test_persistencia.c include/persistencia.h include/salas.h
+	@mkdir -p build
+	$(CC) -std=c99 -Wall -Wextra -Iinclude src/persistencia.c tests/test_persistencia.c -o $@
+
+test: $(TEST_BIN)
+	cd build && ./test_persistencia
+
+.PHONY: clean test
