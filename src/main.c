@@ -1,11 +1,19 @@
 #include <stdio.h>
-// declarar funçao para conseguir carregar as salas do CSV
+#include <string.h>
+#include "../include/salas.h"
+#include "../include/ambiente.h"
+
 void carregarSalasDoCSV();
+void carregarReservasDoCSV();
 
 int main() {
-    printf("=== INICIANDO TESTE DO SISTEMA DE SALAS ===\n\n");
-    
-    carregarSalasDoCSV(); // chama a função
-    
+    printf("=== INICIANDO SISTEMA DE SALAS ===\n\n");
+
+    carregarSalasDoCSV();
+
+    printf("\n");
+
+    carregarReservasDoCSV();
+
     return 0;
 }
