@@ -42,4 +42,3 @@ GtkWidget *tela_inicio_criar(Estado *e)   { return pagina(e, "Bom dia, Leidjane"
 GtkWidget *tela_visao_criar(Estado *e)    { return pagina(e, "Visão geral", "Grade do dia: salas nas linhas, horários nas colunas.", "Nova reserva"); }
 GtkWidget *tela_busca_criar(Estado *e)    { return pagina(e, "Buscar salas", "Informe dia, horário, pessoas e recursos.", NULL); }
 GtkWidget *tela_reservas_criar(Estado *e) { return pagina(e, "Reservas", "Criar, editar, remanejar e cancelar.", NULL); }
-GtkWidget *tela_salas_criar(Estado *e)    { return pagina(e, "Salas", "Cadastro de ambientes e suas características.", "Nova sala"); }
