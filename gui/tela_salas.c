@@ -1,20 +1,9 @@
 #include "interface.h"
 #include <string.h>
 
-#define MAX_SALAS 64
-
-typedef struct {
-    char nome[64];
-    char local[64];
-    int  lugares;
-    int  projetor;
-    int  acessivel;
-} SalaTeste;
 
 typedef struct {
     Estado *e;
-    SalaTeste salas[MAX_SALAS];
-    int n;
     int selecionado;          /* -1 = cadastrando sala nova */
 
     GtkWidget *lista;
@@ -27,15 +16,6 @@ typedef struct {
     GtkWidget *chk_acessivel;
 } TelaSalas;
 
-static const SalaTeste INICIAIS[] = {
-    {"I08", "Bloco I", 35, 1, 1},
-    {"B04", "Bloco B", 45, 1, 0},
-    {"B03", "Bloco B", 40, 0, 0},
-    {"C01", "Bloco C", 30, 1, 0},
-    {"A02", "Bloco A", 60, 1, 1},
-    {"D05", "Bloco D", 25, 1, 1},
-    {"Auditório", "Prédio central", 120, 1, 1}
-};
 
 static void aplicar_estilo(void) {
     GtkCssProvider *css = gtk_css_provider_new();
@@ -83,8 +63,8 @@ static void preencher_lista(TelaSalas *t) {
     while ((r = gtk_list_box_get_row_at_index(GTK_LIST_BOX(t->lista), 0)) != NULL)
         gtk_list_box_remove(GTK_LIST_BOX(t->lista), GTK_WIDGET(r));
 
-    for (int i = 0; i < t->n; i++) {
-        SalaTeste *s = &t->salas[i];
+    for (int i = 0; i < g_n_salas; i++) {
+        SalaTeste *s = &g_salas[i];
         char lug[16];
         g_snprintf(lug, sizeof lug, "%d", s->lugares);
         GtkWidget *caixa = linha_tabela(s->nome, s->local, lug,
@@ -95,13 +75,13 @@ static void preencher_lista(TelaSalas *t) {
         gtk_list_box_row_set_child(GTK_LIST_BOX_ROW(row), caixa);
         gtk_list_box_append(GTK_LIST_BOX(t->lista), row);
     }
-    char *txt = g_strdup_printf("%d ambientes cadastrados", t->n);
+    char *txt = g_strdup_printf("%d ambientes cadastrados", g_n_salas);
     gtk_label_set_text(GTK_LABEL(t->rotulo_total), txt);
     g_free(txt);
 }
 
 static void mostrar_sala(TelaSalas *t, int i) {
-    SalaTeste *s = &t->salas[i];
+    SalaTeste *s = &g_salas[i];
     char *tit = g_strdup_printf("Editar %s", s->nome);
     gtk_label_set_text(GTK_LABEL(t->titulo_form), tit);
     g_free(tit);
@@ -154,13 +134,13 @@ static void ao_salvar(GtkButton *b, gpointer dados) {
     } else if (local[0] == '\0') {
         erro = g_strdup("Informe o local (bloco ou prédio).");
     } else {
-        for (int i = 0; i < t->n; i++) {
-            if (i != t->selecionado && g_ascii_strcasecmp(t->salas[i].nome, nome) == 0) {
+        for (int i = 0; i < g_n_salas; i++) {
+            if (i != t->selecionado && g_ascii_strcasecmp(g_salas[i].nome, nome) == 0) {
                 erro = g_strdup_printf("Já existe uma sala chamada %s.", nome);
                 break;
             }
         }
-        if (!erro && t->selecionado < 0 && t->n >= MAX_SALAS)
+        if (!erro && t->selecionado < 0 && g_n_salas >= MAX_SALAS)
             erro = g_strdup("Limite de salas atingido.");
     }
 
@@ -170,8 +150,8 @@ static void ao_salvar(GtkButton *b, gpointer dados) {
         return;
     }
 
-    int destino = (t->selecionado >= 0) ? t->selecionado : t->n++;
-    SalaTeste *s = &t->salas[destino];
+    int destino = (t->selecionado >= 0) ? t->selecionado : g_n_salas++;
+    SalaTeste *s = &g_salas[destino];
     g_strlcpy(s->nome, nome, sizeof s->nome);
     g_strlcpy(s->local, local, sizeof s->local);
     s->lugares   = gtk_spin_button_get_value_as_int(GTK_SPIN_BUTTON(t->spin_lugares));
@@ -199,8 +179,6 @@ GtkWidget *tela_salas_criar(Estado *e) {
     TelaSalas *t = g_new0(TelaSalas, 1);
     t->e = e;
     t->selecionado = -1;
-    memcpy(t->salas, INICIAIS, sizeof INICIAIS);
-    t->n = G_N_ELEMENTS(INICIAIS);
     aplicar_estilo();
 
     GtkWidget *pagina = gtk_box_new(GTK_ORIENTATION_VERTICAL, 14);

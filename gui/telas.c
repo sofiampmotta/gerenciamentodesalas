@@ -1,7 +1,7 @@
 #include "interface.h"
 
 static void ao_nova_reserva(GtkButton *b, gpointer dados) {
-    interface_mensagem((Estado *) dados, "Reserva de teste salva. A grade foi atualizada.", FALSE);
+    interface_ir_para((Estado *) dados, "nova");
 }
 
 static GtkWidget *pagina(Estado *e, const char *titulo, const char *sub, const char *botao) {
@@ -23,7 +23,6 @@ static GtkWidget *pagina(Estado *e, const char *titulo, const char *sub, const c
     GtkWidget *s = gtk_label_new(sub);
     gtk_widget_add_css_class(s, "subtitulo");
     gtk_label_set_xalign(GTK_LABEL(s), 0);
-    gtk_label_set_yalign(GTK_LABEL(s), 0);
     gtk_box_append(GTK_BOX(textos), s);
     gtk_box_append(GTK_BOX(topo), textos);
 
@@ -38,7 +37,4 @@ static GtkWidget *pagina(Estado *e, const char *titulo, const char *sub, const c
     return caixa;
 }
 
-GtkWidget *tela_inicio_criar(Estado *e)   { return pagina(e, "Bom dia, Leidjane", "Resumo: salas livres agora, ocupações do dia e conflitos.", "Nova reserva"); }
-GtkWidget *tela_visao_criar(Estado *e)    { return pagina(e, "Visão geral", "Grade do dia: salas nas linhas, horários nas colunas.", "Nova reserva"); }
-GtkWidget *tela_busca_criar(Estado *e)    { return pagina(e, "Buscar salas", "Informe dia, horário, pessoas e recursos.", NULL); }
-GtkWidget *tela_reservas_criar(Estado *e) { return pagina(e, "Reservas", "Criar, editar, remanejar e cancelar.", NULL); }
+GtkWidget *tela_visao_criar(Estado *e)  { return pagina(e, "Visão geral", "Grade do dia: salas nas linhas, horários nas colunas.", "Nova reserva"); }
