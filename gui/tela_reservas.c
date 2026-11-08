@@ -34,7 +34,8 @@ static GtkWidget *celula(const char *texto, int largura) {
     return l;
 }
 
-static GtkWidget *linha(const char *a, const char *b, const char *c, const char *d, const char *f, const char *g) {
+static GtkWidget *linha(const char *a, const char *b, const char *c,
+                        const char *d, const char *f, const char *g) {
     GtkWidget *caixa = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
     gtk_box_append(GTK_BOX(caixa), celula(a, 100));
     gtk_box_append(GTK_BOX(caixa), celula(b, 120));
