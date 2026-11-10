@@ -56,24 +56,20 @@ static GtkWidget *criar_menu(Estado *e) {
     gtk_widget_set_vexpand(espaco, TRUE);
     gtk_box_append(GTK_BOX(menu), espaco);
 
-    e->rotulo_nome = gtk_label_new("");
+    e->rotulo_nome = gtk_label_new("Leidjane");
     gtk_widget_add_css_class(e->rotulo_nome, "usuario-nome");
     gtk_label_set_xalign(GTK_LABEL(e->rotulo_nome), 0);
-    e->rotulo_setor = gtk_label_new("");
+    e->rotulo_setor = gtk_label_new("DATP");
     gtk_widget_add_css_class(e->rotulo_setor, "usuario-info");
     gtk_label_set_xalign(GTK_LABEL(e->rotulo_setor), 0);
     GtkWidget *u3 = gtk_label_new("Sistema local");
     gtk_widget_add_css_class(u3, "usuario-info");
     gtk_label_set_xalign(GTK_LABEL(u3), 0);
+    gtk_box_append(GTK_BOX(menu), tema_criar_chave());
     gtk_box_append(GTK_BOX(menu), e->rotulo_nome);
     gtk_box_append(GTK_BOX(menu), e->rotulo_setor);
     gtk_box_append(GTK_BOX(menu), u3);
 
-    GtkWidget *sair = gtk_button_new_with_label("Sair");
-    gtk_widget_add_css_class(sair, "menu");
-    gtk_widget_set_halign(gtk_button_get_child(GTK_BUTTON(sair)), GTK_ALIGN_START);
-    g_signal_connect(sair, "clicked", G_CALLBACK(login_sair), e);
-    gtk_box_append(GTK_BOX(menu), sair);
     return menu;
 }
 
@@ -108,12 +104,8 @@ static void ativar(GtkApplication *app, gpointer dados) {
     gtk_box_append(GTK_BOX(app_raiz), criar_menu(e));
     gtk_box_append(GTK_BOX(app_raiz), direita);
 
-    e->raiz = gtk_stack_new();
-    gtk_stack_add_named(GTK_STACK(e->raiz), tela_login_criar(e), "login");
-    gtk_stack_add_named(GTK_STACK(e->raiz), app_raiz, "app");
-    gtk_stack_set_visible_child_name(GTK_STACK(e->raiz), "login");
 
-    gtk_window_set_child(GTK_WINDOW(e->janela), e->raiz);
+    gtk_window_set_child(GTK_WINDOW(e->janela), app_raiz);
     gtk_window_present(GTK_WINDOW(e->janela));
 }
 
