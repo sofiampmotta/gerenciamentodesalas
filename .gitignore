@@ -1,5 +1,7 @@
 bin/
+.vscode/
 obj/
+*.exe
 build/
 *.tmp
 *.bak
