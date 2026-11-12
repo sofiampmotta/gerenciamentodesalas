@@ -1,6 +1,7 @@
 bin/
 .vscode/
 obj/
+*.pdf
 *.exe
 build/
 *.tmp
