@@ -7,19 +7,21 @@
 #define FAIXA_INI     420
 #define FAIXA_TOT     900      /* 07:00 .. 22:00 */
 
-static const char *TIPOS[]      = { "Monitoria", "Extensão", "Evento", NULL };
+static const char *TIPOS[]      = { "Monitoria", "Extensão", "Evento", "Aula", NULL };
 static const char *REPETICOES[] = { "Só nesta data", "Toda semana até o fim do semestre", NULL };
 
 typedef struct {
     Estado *e;
     GtkWidget *atividade, *tipo, *responsavel, *descricao, *pessoas, *sala;
-    GtkWidget *dia, *mes, *ano, *h_ini, *h_fim, *repeticao;
+    GtkWidget *data, *h_ini, *h_fim, *repeticao;
     GtkWidget *status, *motivo, *l_cabe, *l_proj, *l_hor, *l_dia, *faixa;
     ReservaTeste       r;
     VerificacaoReserva v;
     gboolean montando;
     GtkWidget *b_voltar;
     gboolean da_busca, pend_busca;
+    int editando_id;
+    GtkWidget *titulo_pag, *b_salvar_w;
 } TelaNova;
 
 static TelaNova *g_nova = NULL;
@@ -63,6 +65,7 @@ static GtkWidget *lista_horarios(int selecionado) {
     }
     ptrs[NUM_HORARIOS] = NULL;
     GtkWidget *d = gtk_drop_down_new_from_strings(ptrs);
+    gtk_drop_down_set_enable_search(GTK_DROP_DOWN(d), TRUE);
     gtk_drop_down_set_selected(GTK_DROP_DOWN(d), selecionado);
     return d;
 }
@@ -80,14 +83,12 @@ static void ler_formulario(TelaNova *t, ReservaTeste *r, int *pessoas, int *repe
     g_strstrip(r->atividade); g_strstrip(r->responsavel); g_strstrip(r->descricao);
 
     guint tp = gtk_drop_down_get_selected(GTK_DROP_DOWN(t->tipo));
-    g_strlcpy(r->tipo, TIPOS[tp > 2 ? 0 : tp], sizeof r->tipo);
+    g_strlcpy(r->tipo, TIPOS[tp > 3 ? 0 : tp], sizeof r->tipo);
 
     GObject *it = gtk_drop_down_get_selected_item(GTK_DROP_DOWN(t->sala));
     if (it) g_strlcpy(r->sala, gtk_string_object_get_string(GTK_STRING_OBJECT(it)), sizeof r->sala);
 
-    r->dia = gtk_spin_button_get_value_as_int(GTK_SPIN_BUTTON(t->ano)) * 10000
-           + gtk_spin_button_get_value_as_int(GTK_SPIN_BUTTON(t->mes)) * 100
-           + gtk_spin_button_get_value_as_int(GTK_SPIN_BUTTON(t->dia));
+    r->dia = seletor_data_get(t->data);
     r->ini = PRIMEIRA_HORA + PASSO * (int) indice_horario(t->h_ini);
     r->fim = PRIMEIRA_HORA + PASSO * (int) indice_horario(t->h_fim);
 
@@ -110,6 +111,7 @@ static void atualizar(TelaNova *t) {
     if (t->montando) return;
     int pessoas, rep;
     ler_formulario(t, &t->r, &pessoas, &rep);
+    t->r.idReserva = t->editando_id;
     VerificacaoReserva *v = &t->v;
     dados_verificar_reserva(&t->r, pessoas, rep, v);
 
@@ -216,15 +218,14 @@ static void recarregar_salas(TelaNova *t) {
 }
 
 static void limpar(TelaNova *t) {
+    t->editando_id = 0;
     t->montando = TRUE;
     gtk_editable_set_text(GTK_EDITABLE(t->atividade), "");
     gtk_editable_set_text(GTK_EDITABLE(t->responsavel), "");
     gtk_editable_set_text(GTK_EDITABLE(t->descricao), "");
     gtk_drop_down_set_selected(GTK_DROP_DOWN(t->tipo), 0);
     gtk_spin_button_set_value(GTK_SPIN_BUTTON(t->pessoas), 30);
-    gtk_spin_button_set_value(GTK_SPIN_BUTTON(t->dia), DATA_PADRAO % 100);
-    gtk_spin_button_set_value(GTK_SPIN_BUTTON(t->mes), (DATA_PADRAO / 100) % 100);
-    gtk_spin_button_set_value(GTK_SPIN_BUTTON(t->ano), DATA_PADRAO / 10000);
+    seletor_data_set(t->data, DATA_PADRAO);
     gtk_drop_down_set_selected(GTK_DROP_DOWN(t->h_ini), (14 * 60 - PRIMEIRA_HORA) / PASSO);
     gtk_drop_down_set_selected(GTK_DROP_DOWN(t->h_fim), (16 * 60 - PRIMEIRA_HORA) / PASSO);
     gtk_drop_down_set_selected(GTK_DROP_DOWN(t->repeticao), 0);
@@ -234,6 +235,7 @@ static void limpar(TelaNova *t) {
 
 static void ao_mudou(GObject *o, GParamSpec *p, gpointer dados) { atualizar((TelaNova *) dados); }
 static void ao_mudou_spin(GtkSpinButton *s, gpointer dados)     { atualizar((TelaNova *) dados); }
+static void ao_data(gpointer dados) { atualizar((TelaNova *) dados); }
 
 static void ao_mostrar(GtkWidget *w, gpointer dados) {
     TelaNova *t = (TelaNova *) dados;
@@ -241,6 +243,9 @@ static void ao_mostrar(GtkWidget *w, gpointer dados) {
     t->da_busca = t->pend_busca;
     t->pend_busca = FALSE;
     gtk_button_set_label(GTK_BUTTON(t->b_voltar), t->da_busca ? "Voltar para a busca" : "Voltar para Reservas");
+    gtk_label_set_text(GTK_LABEL(t->titulo_pag), t->editando_id > 0 ? "Editar reserva" : "Nova reserva");
+    gtk_button_set_label(GTK_BUTTON(t->b_salvar_w), t->editando_id > 0 ? "Salvar alterações" : "Salvar reserva");
+    gtk_widget_set_sensitive(t->repeticao, t->editando_id == 0);
     atualizar(t);
 }
 
@@ -250,6 +255,7 @@ static void ao_salvar(GtkButton *b, gpointer dados) {
     int pessoas, rep;
     char msg[240];
     ler_formulario(t, &r, &pessoas, &rep);
+    r.idReserva = t->editando_id;
     if (dados_salvar_reserva(&r, pessoas, rep, msg, sizeof msg) < 0) {
         interface_mensagem(t->e, msg, TRUE);
         return;
@@ -290,6 +296,7 @@ GtkWidget *tela_nova_reserva_criar(Estado *e) {
 
     GtkWidget *topo = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 12);
     GtkWidget *titulo = gtk_label_new("Nova reserva");
+    t->titulo_pag = titulo;
     gtk_widget_add_css_class(titulo, "titulo");
     gtk_label_set_xalign(GTK_LABEL(titulo), 0);
     gtk_widget_set_hexpand(titulo, TRUE);
@@ -314,18 +321,14 @@ GtkWidget *tela_nova_reserva_criar(Estado *e) {
     gtk_entry_set_max_length(GTK_ENTRY(t->descricao), 120);
     t->tipo      = gtk_drop_down_new_from_strings(TIPOS);
     t->sala      = gtk_drop_down_new_from_strings(vazio);
+    gtk_drop_down_set_enable_search(GTK_DROP_DOWN(t->sala), TRUE);
     t->pessoas   = spin(1, 1000, 30);
-    t->dia       = spin(1, 31, DATA_PADRAO % 100);
-    t->mes       = spin(1, 12, (DATA_PADRAO / 100) % 100);
-    t->ano       = spin(2026, 2035, DATA_PADRAO / 10000);
+    t->data = seletor_data_criar(DATA_PADRAO, ao_data, t);
     t->h_ini     = lista_horarios((14 * 60 - PRIMEIRA_HORA) / PASSO);
     t->h_fim     = lista_horarios((16 * 60 - PRIMEIRA_HORA) / PASSO);
     t->repeticao = gtk_drop_down_new_from_strings(REPETICOES);
 
-    GtkWidget *data = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
-    gtk_box_append(GTK_BOX(data), t->dia);
-    gtk_box_append(GTK_BOX(data), t->mes);
-    gtk_box_append(GTK_BOX(data), t->ano);
+    GtkWidget *data = t->data;
     GtkWidget *horas = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
     gtk_box_append(GTK_BOX(horas), t->h_ini);
     gtk_box_append(GTK_BOX(horas), gtk_label_new("às"));
@@ -352,7 +355,7 @@ GtkWidget *tela_nova_reserva_criar(Estado *e) {
     gtk_grid_attach(GTK_GRID(grade), rotulo("Pessoas previstas"), 1, 6, 1, 1);
     gtk_grid_attach(GTK_GRID(grade), t->sala,               0, 7, 1, 1);
     gtk_grid_attach(GTK_GRID(grade), t->pessoas,            1, 7, 1, 1);
-    gtk_grid_attach(GTK_GRID(grade), rotulo("Dia (dia, mês, ano)"), 0, 8, 1, 1);
+    gtk_grid_attach(GTK_GRID(grade), rotulo("Dia"), 0, 8, 1, 1);
     gtk_grid_attach(GTK_GRID(grade), rotulo("Horário"),     1, 8, 1, 1);
     gtk_grid_attach(GTK_GRID(grade), data,                  0, 9, 1, 1);
     gtk_grid_attach(GTK_GRID(grade), horas,                 1, 9, 1, 1);
@@ -362,6 +365,7 @@ GtkWidget *tela_nova_reserva_criar(Estado *e) {
     GtkWidget *botoes = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
     gtk_widget_set_margin_top(botoes, 14);
     GtkWidget *b_salvar = gtk_button_new_with_label("Salvar reserva");
+    t->b_salvar_w = b_salvar;
     gtk_widget_add_css_class(b_salvar, "primario");
     g_signal_connect(b_salvar, "clicked", G_CALLBACK(ao_salvar), t);
     GtkWidget *b_desc = gtk_button_new_with_label("Descartar");
@@ -406,9 +410,6 @@ GtkWidget *tela_nova_reserva_criar(Estado *e) {
     g_signal_connect(t->h_fim,     "notify::selected", G_CALLBACK(ao_mudou), t);
     g_signal_connect(t->repeticao, "notify::selected", G_CALLBACK(ao_mudou), t);
     g_signal_connect(t->pessoas,   "value-changed", G_CALLBACK(ao_mudou_spin), t);
-    g_signal_connect(t->dia,       "value-changed", G_CALLBACK(ao_mudou_spin), t);
-    g_signal_connect(t->mes,       "value-changed", G_CALLBACK(ao_mudou_spin), t);
-    g_signal_connect(t->ano,       "value-changed", G_CALLBACK(ao_mudou_spin), t);
 
     GtkWidget *rolagem = gtk_scrolled_window_new();
     gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(rolagem), GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
@@ -430,13 +431,55 @@ void nova_reserva_preencher(const char *sala, int dia, int ini, int fim, int pes
     for (int i = 0; i < g_n_salas; i++)
         if (strcmp(g_salas[i].nome, sala) == 0)
             gtk_drop_down_set_selected(GTK_DROP_DOWN(t->sala), i);
-    gtk_spin_button_set_value(GTK_SPIN_BUTTON(t->dia), dia % 100);
-    gtk_spin_button_set_value(GTK_SPIN_BUTTON(t->mes), (dia / 100) % 100);
-    gtk_spin_button_set_value(GTK_SPIN_BUTTON(t->ano), dia / 10000);
+    seletor_data_set(t->data, dia);
     gtk_drop_down_set_selected(GTK_DROP_DOWN(t->h_ini), (ini - PRIMEIRA_HORA) / PASSO);
     gtk_drop_down_set_selected(GTK_DROP_DOWN(t->h_fim), (fim - PRIMEIRA_HORA) / PASSO);
     gtk_spin_button_set_value(GTK_SPIN_BUTTON(t->pessoas), pessoas);
     t->montando = FALSE;
     t->pend_busca = TRUE;
+    atualizar(t);
+}
+
+/* Chamada pela tela "Reservas": abre o formulário preenchido para editar */
+void nova_reserva_editar(int id) {
+    TelaNova *t = g_nova;
+    int i = dados_indice_reserva(id);
+    if (!t || i < 0) return;
+    const ReservaTeste *r = &g_reservas[i];
+
+    recarregar_salas(t);
+    limpar(t);
+    t->montando = TRUE;
+    gtk_editable_set_text(GTK_EDITABLE(t->atividade), r->atividade);
+    gtk_editable_set_text(GTK_EDITABLE(t->responsavel), r->responsavel);
+    gtk_editable_set_text(GTK_EDITABLE(t->descricao), r->descricao);
+
+    for (guint k = 0; TIPOS[k] != NULL; k++)
+        if (strcmp(TIPOS[k], r->tipo) == 0)
+            gtk_drop_down_set_selected(GTK_DROP_DOWN(t->tipo), k);
+    for (int k = 0; k < g_n_salas; k++)
+        if (strcmp(g_salas[k].nome, r->sala) == 0)
+            gtk_drop_down_set_selected(GTK_DROP_DOWN(t->sala), k);
+
+    seletor_data_set(t->data, r->dia);
+
+    int a = (r->ini - PRIMEIRA_HORA) / PASSO;
+    int b = (r->fim - PRIMEIRA_HORA) / PASSO;
+    if (a < 0) a = 0;
+    if (a >= NUM_HORARIOS) a = NUM_HORARIOS - 1;
+    if (b < 0) b = 0;
+    if (b >= NUM_HORARIOS) b = NUM_HORARIOS - 1;
+    gtk_drop_down_set_selected(GTK_DROP_DOWN(t->h_ini), a);
+    gtk_drop_down_set_selected(GTK_DROP_DOWN(t->h_fim), b);
+
+    int pessoas = r->pessoas;
+    if (pessoas <= 0) {      /* reserva antiga, sem o número informado */
+        int s = dados_indice_sala(r->sala);
+        pessoas = (s >= 0 && g_salas[s].lugares < 30) ? g_salas[s].lugares : 30;
+    }
+    gtk_spin_button_set_value(GTK_SPIN_BUTTON(t->pessoas), pessoas);
+
+    t->editando_id = id;
+    t->montando = FALSE;
     atualizar(t);
 }

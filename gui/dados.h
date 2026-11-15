@@ -26,6 +26,7 @@ typedef struct {
     int  dia;               /* AAAAMMDD */
     int  ini;               /* minutos desde 00:00 */
     int  fim;
+    int  pessoas;
 } ReservaTeste;
 
 typedef struct {
@@ -54,4 +55,6 @@ void dados_hora_texto(int min, char *buf, size_t tam);
 int  dados_conflito(const char *sala, int dia, int ini, int fim, int ignorar_id);
 void dados_verificar_reserva(const ReservaTeste *r, int pessoas, int repetir, VerificacaoReserva *v);
 int  dados_salvar_reserva(const ReservaTeste *r, int pessoas, int repetir, char *msg, size_t tam);
+int  dados_indice_reserva(int id);
+int  dados_atualizar_reserva(const ReservaTeste *r, int pessoas, char *msg, size_t tam);
 #endif

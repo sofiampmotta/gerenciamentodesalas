@@ -28,4 +28,10 @@ GtkWidget *tela_nova_reserva_criar(Estado *e);
 GtkWidget *tela_salas_criar(Estado *e);
 void nova_reserva_preencher(const char *sala, int dia, int ini, int fim, int pessoas);
 GtkWidget *tema_criar_chave(void);
+GtkWidget *seletor_data_criar(int data, void (*ao_mudar)(gpointer), gpointer dados);
+int seletor_data_get(GtkWidget *w);
+void seletor_data_set(GtkWidget *w, int data);
+GtkWidget *logo_poli_criar(void);
+void visual_aplicar(void);
+void nova_reserva_editar(int id);
 #endif

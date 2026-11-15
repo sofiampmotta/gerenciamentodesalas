@@ -147,6 +147,7 @@ void dados_verificar_reserva(const ReservaTeste *r, int pessoas, int repetir, Ve
 }
 
 int dados_salvar_reserva(const ReservaTeste *r, int pessoas, int repetir, char *msg, size_t tam) {
+    if (r->idReserva > 0) return dados_atualizar_reserva(r, pessoas, msg, tam) == 0 ? 1 : -1;
     if (r->atividade[0] == '\0')   { g_strlcpy(msg, "Informe o nome da atividade.", tam); return -1; }
     if (r->responsavel[0] == '\0') { g_strlcpy(msg, "Informe o responsável pela reserva.", tam); return -1; }
 
@@ -167,10 +168,33 @@ int dados_salvar_reserva(const ReservaTeste *r, int pessoas, int repetir, char *
         ReservaTeste *n = &g_reservas[g_n_reservas++];
         *n = *r;
         n->idReserva = proximo_id++;
+        n->pessoas = pessoas;
         n->dia = dia;
         dia = somar_dias(dia, 7);
     }
     if (ocorrencias == 1) g_snprintf(msg, tam, "Reserva salva na %s.", r->sala);
     else g_snprintf(msg, tam, "%d reservas salvas na %s (toda semana até o fim do semestre).", ocorrencias, r->sala);
     return ocorrencias;
+}
+
+int dados_indice_reserva(int id) {
+    for (int i = 0; i < g_n_reservas; i++)
+        if (g_reservas[i].idReserva == id) return i;
+    return -1;
+}
+
+int dados_atualizar_reserva(const ReservaTeste *r, int pessoas, char *msg, size_t tam) {
+    int i = dados_indice_reserva(r->idReserva);
+    if (i < 0) { g_strlcpy(msg, "Reserva não encontrada.", tam); return -1; }
+    if (r->atividade[0] == '\0')   { g_strlcpy(msg, "Informe o nome da atividade.", tam); return -1; }
+    if (r->responsavel[0] == '\0') { g_strlcpy(msg, "Informe o responsável pela reserva.", tam); return -1; }
+
+    VerificacaoReserva v;
+    dados_verificar_reserva(r, pessoas, 0, &v);
+    if (!v.ok) { g_strlcpy(msg, v.motivo[0] ? v.motivo : v.titulo, tam); return -1; }
+
+    g_reservas[i] = *r;
+    g_reservas[i].pessoas = pessoas;
+    g_snprintf(msg, tam, "Reserva atualizada: %s, sala %s.", r->atividade, r->sala);
+    return 0;
 }

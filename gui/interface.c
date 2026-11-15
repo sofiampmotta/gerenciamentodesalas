@@ -37,6 +37,7 @@ static GtkWidget *criar_menu(Estado *e) {
     gtk_widget_add_css_class(sub, "sublogo");
     gtk_label_set_xalign(GTK_LABEL(sub), 0);
     gtk_box_append(GTK_BOX(menu), sub);
+    gtk_box_append(GTK_BOX(menu), logo_poli_criar());
 
     GtkWidget *primeiro = NULL;
     for (int i = 0; i < 5; i++) {
@@ -77,6 +78,7 @@ static void ativar(GtkApplication *app, gpointer dados) {
     Estado *e = g_new0(Estado, 1);
     dados_iniciar();
     estilo_aplicar();
+    visual_aplicar();
 
     e->janela = gtk_application_window_new(app);
     gtk_window_set_title(GTK_WINDOW(e->janela), "POLI - Gestão de Ambientes");
