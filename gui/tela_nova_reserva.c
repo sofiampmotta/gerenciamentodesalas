@@ -255,6 +255,7 @@ static void ao_salvar(GtkButton *b, gpointer dados) {
     int pessoas, rep;
     char msg[240];
     ler_formulario(t, &r, &pessoas, &rep);
+    acao_log("salvar_reserva id:%d atividade:%s tipo:%s responsavel:%s sala:%s dia:%d inicio:%s fim:%s pessoas:%d semanal:%d", t->editando_id, r.atividade, r.tipo, r.responsavel, r.sala, r.dia, acao_hora(r.ini), acao_hora(r.fim), pessoas, rep);
     r.idReserva = t->editando_id;
     if (dados_salvar_reserva(&r, pessoas, rep, msg, sizeof msg) < 0) {
         interface_mensagem(t->e, msg, TRUE);

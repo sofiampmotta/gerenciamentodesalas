@@ -30,6 +30,12 @@ static const char *CSS_ESCURO =
     "  border: 1px solid #5b87c7; }"
     "button.secundario:hover { background: #243049; }"
 
+    ".card-visao { background: #1c2434; border-color: #33405a; }"
+    ".cab-quadro, .bloco-hora { background: #243049; color: #e6ebf5; }"
+    ".cab-quadro label { color: #e6ebf5; }"
+    ".linha-quadro, .linha-ocup, .resumo-linha { border-bottom-color: #33405a; }"
+    "button.btn-pdf, button.btn-csv { background: #1c2434; }"
+    "menubutton.secundario > button { background: #1c2434; color: #e6ebf5; border-color: #5b87c7; }"
     ".status-ok, .check-ok { color: #4cc38a; }"
     ".status-erro, .check-erro, .aviso-busca { color: #ff6b81; }"
     ".barra-status { color: #9aa7c0; border-top-color: #33405a; }"

@@ -132,6 +132,7 @@ static GtkWidget *criar_faixa(const char *sala, int dia, int ini, int fim) {
 /* ---- botão Reservar: abre o formulário já preenchido ---- */
 static void ao_reservar(GtkButton *b, gpointer dados) {
     Pedido *p = (Pedido *) dados;
+    acao_log("reservar_sala_da_busca sala:%s dia:%d inicio:%s fim:%s pessoas:%d", p->sala, p->dia, acao_hora(p->ini), acao_hora(p->fim), p->pessoas);
     nova_reserva_preencher(p->sala, p->dia, p->ini, p->fim, p->pessoas);
     interface_ir_para(p->t->e, "nova");
 }
@@ -211,6 +212,7 @@ static void aviso(TelaBusca *t, const char *msg) {
 static void buscar(TelaBusca *t) {
     Filtros f;
     ler_filtros(t, &f);
+    acao_log("buscar_salas dia:%d inicio:%s fim:%s pessoas:%d projetor:%d acessivel:%d", f.dia, acao_hora(f.ini), acao_hora(f.fim), f.pessoas, f.proj, f.ace);
     limpar_caixa(t->resultados);
 
     if (!dados_data_valida(f.dia)) { aviso(t, "Essa data não existe no calendário."); return; }
