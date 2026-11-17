@@ -1,21 +1,13 @@
 #include "interface.h"
 
-/* ===== TIPOGRAFIA: para testar outra fonte, mude só estas linhas =====
-   Sugestões que já vêm no Windows: 'Georgia' (serifa, como no protótipo),
-   'Trebuchet MS', 'Verdana', 'Bahnschrift'. */
-#define FONTE_TITULOS  "'Segoe UI', Arial, sans-serif"
-#define PESO_TITULOS   "700"
-#define PESO_BOTOES    "600"
+/* Só a fonte e a placa do logo. Para testar outra fonte, mude só esta linha. */
+#define FONTE_TEXTO "Inter, 'Inter UI', 'Inter 18pt', 'Segoe UI', Arial, sans-serif"
 
 void visual_aplicar(void) {
     GtkCssProvider *css = gtk_css_provider_new();
     gtk_css_provider_load_from_string(css,
-        ".titulo, .titulo-form, .secao, .titulo-resultado, .nome-sala-busca,"
-        ".numero-grande, .numero-busca, .status-ok, .status-erro"
-        "  { font-family: " FONTE_TITULOS "; font-weight: " PESO_TITULOS "; }"
-        "button.menu { font-weight: " PESO_BOTOES "; }"
-        "button.primario, button.secundario { font-weight: 700; }"
-        ".negrito { font-weight: 700; }"
+        "* { font-family: " FONTE_TEXTO "; }"
+        ".logo, .logo-cartao { font-family: Georgia, serif; }"
         ".logo-selo { background: #ffffff; border-radius: 8px; padding: 8px 10px;"
         "  margin: 0 24px 14px 24px; }"
     );
