@@ -23,7 +23,7 @@ static void mostrar_no_calendario(Seletor *s) {
     GDateTime *d = g_date_time_new_local(s->data / 10000, (s->data / 100) % 100, s->data % 100, 12, 0, 0);
     if (!d) return;
     s->ajustando = TRUE;
-    gtk_calendar_select_day(GTK_CALENDAR(s->calendario), d);
+    gtk_calendar_set_date(GTK_CALENDAR(s->calendario), d);
     s->ajustando = FALSE;
     g_date_time_unref(d);
 }
