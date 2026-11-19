@@ -185,11 +185,11 @@ static void desenhar_oc(GtkDrawingArea *area, cairo_t *cr, int w, int h, gpointe
     const FaixaOc *f = (const FaixaOc *) dados;
     int barra = h - 14;
 
-    cairo_set_source_rgb(cr, 0.882, 0.902, 0.937);
+    cairo_set_source_rgb(cr, 0.84, 0.88, 0.94);
     cairo_rectangle(cr, 0, 0, w, barra);
     cairo_fill(cr);
 
-    cairo_set_source_rgb(cr, 0.122, 0.306, 0.549);
+    cairo_set_source_rgb(cr, 0.23, 0.51, 0.96);
     for (int i = 0; i < g_n_reservas; i++) {
         const ReservaTeste *o = &g_reservas[i];
         if (o->dia != f->dia || strcmp(o->sala, f->sala) != 0) continue;
@@ -198,8 +198,8 @@ static void desenhar_oc(GtkDrawingArea *area, cairo_t *cr, int w, int h, gpointe
         cairo_fill(cr);
     }
 
-    cairo_set_source_rgb(cr, 0.357, 0.420, 0.541);
-    cairo_set_font_size(cr, 11);
+    cairo_set_source_rgb(cr, 0.36, 0.44, 0.56); cairo_select_font_face(cr, "Segoe UI", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
+    cairo_set_font_size(cr, 13);
     int marcas[4] = { 8, 12, 16, 20 };
     for (int i = 0; i < 4; i++) {
         char txt[8];

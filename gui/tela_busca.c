@@ -24,9 +24,9 @@ static void estilo_busca(void) {
     gtk_css_provider_load_from_string(css,
         ".form-busca { border: 1px solid #e1e6ef; border-radius: 6px; padding: 18px; }"
         ".cartao-sala { border: 1px solid #e1e6ef; border-radius: 6px; padding: 14px 18px; }"
-        ".nome-sala-busca { font-family: Georgia, serif; font-size: 20px; font-weight: bold; }"
-        ".titulo-resultado { font-family: Georgia, serif; font-size: 20px; margin-top: 6px; }"
-        ".numero-busca { font-family: Georgia, serif; font-size: 24px; font-weight: bold; }"
+        ".nome-sala-busca { font-family: 'Segoe UI', 'Inter', Arial, sans-serif; font-weight: 800; font-size: 20px; font-weight: bold; }"
+        ".titulo-resultado { font-family: 'Segoe UI', 'Inter', Arial, sans-serif; font-weight: 800; font-size: 20px; margin-top: 6px; }"
+        ".numero-busca { font-family: 'Segoe UI', 'Inter', Arial, sans-serif; font-weight: 800; font-size: 24px; font-weight: bold; }"
         ".nota-busca { color: #5b6b8a; }"
         ".aviso-busca { color: #c8102e; font-weight: bold; }"
     );
@@ -106,8 +106,8 @@ static void desenhar_faixa(GtkDrawingArea *area, cairo_t *cr, int w, int h, gpoi
     cairo_rectangle(cr, px(f->ini, w), 0, px(f->fim, w) - px(f->ini, w), barra);
     cairo_fill(cr);
 
-    cairo_set_source_rgb(cr, 0.357, 0.420, 0.541);
-    cairo_set_font_size(cr, 11);
+    cairo_set_source_rgb(cr, 0.36, 0.44, 0.56); cairo_select_font_face(cr, "Segoe UI", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
+    cairo_set_font_size(cr, 13);
     int marcas[4] = { 8, 12, 16, 20 };
     for (int i = 0; i < 4; i++) {
         char txt[8];

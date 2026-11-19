@@ -1,7 +1,7 @@
 #include "interface.h"
 #include <cairo.h>
 
-#define LOGO_LARGURA 150
+#define LOGO_LARGURA 110
 
 typedef struct { cairo_surface_t *img; int w, h; } Logo;
 
