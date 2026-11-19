@@ -19,7 +19,6 @@ void interface_ir_para(Estado *e, const char *tela);
 void estilo_aplicar(void);
 void login_sair(GtkButton *b, gpointer dados);
 
-GtkWidget *tela_login_criar(Estado *e);
 GtkWidget *tela_inicio_criar(Estado *e);
 GtkWidget *tela_visao_criar(Estado *e);
 GtkWidget *tela_busca_criar(Estado *e);
