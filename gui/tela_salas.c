@@ -272,5 +272,9 @@ GtkWidget *tela_salas_criar(Estado *e) {
     gtk_list_box_select_row(GTK_LIST_BOX(t->lista),
         gtk_list_box_get_row_at_index(GTK_LIST_BOX(t->lista), 0));
 
-    return pagina;
+    GtkWidget *pagina_rolagem = gtk_scrolled_window_new();
+    gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(pagina_rolagem),
+        GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
+    gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(pagina_rolagem), pagina);
+    return pagina_rolagem;
 }
