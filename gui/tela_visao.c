@@ -551,5 +551,11 @@ GtkWidget *tela_visao_criar(Estado *e) {
     g_signal_connect(pagina, "map", G_CALLBACK(ao_mostrar), t);
     recarregar_salas(t);
     atualizar(t);
-    return pagina;
+
+    GtkWidget *rolagem = gtk_scrolled_window_new();
+    gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(rolagem),
+        GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
+    gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(rolagem), pagina);
+    return rolagem;
 }
+

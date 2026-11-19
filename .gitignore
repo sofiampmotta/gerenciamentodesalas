@@ -3,3 +3,6 @@ obj/
 build/
 *.tmp
 *.bak
+.vscode/
+*.exe
+usuarios.csv

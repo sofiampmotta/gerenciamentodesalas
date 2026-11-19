@@ -133,9 +133,12 @@ static void ativar(GtkApplication *app, gpointer dados) {
 
     e->janela = gtk_application_window_new(app);
     gtk_window_set_title(GTK_WINDOW(e->janela), "POLI - Gestão de Ambientes");
-    gtk_window_set_default_size(GTK_WINDOW(e->janela), 1100, 700);
+    gtk_window_set_resizable(GTK_WINDOW(e->janela), TRUE);
+    gtk_window_set_default_size(GTK_WINDOW(e->janela), 960, 540);
 
     e->stack = gtk_stack_new();
+    gtk_stack_set_hhomogeneous(GTK_STACK(e->stack), FALSE);
+    gtk_stack_set_vhomogeneous(GTK_STACK(e->stack), FALSE);
     gtk_widget_set_hexpand(e->stack, TRUE);
     gtk_widget_set_vexpand(e->stack, TRUE);
     gtk_stack_add_named(GTK_STACK(e->stack), tela_inicio_criar(e), "inicio");
@@ -160,14 +163,19 @@ static void ativar(GtkApplication *app, gpointer dados) {
     gtk_box_append(GTK_BOX(e->barra_status), rotulo_status_global);
 
     GtkWidget *direita = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+    gtk_widget_set_hexpand(direita, TRUE);
+    gtk_widget_set_vexpand(direita, TRUE);
     gtk_box_append(GTK_BOX(direita), e->stack);
     gtk_box_append(GTK_BOX(direita), e->barra_status);
 
     GtkWidget *app_raiz = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+    gtk_widget_set_hexpand(app_raiz, TRUE);
+    gtk_widget_set_vexpand(app_raiz, TRUE);
     gtk_box_append(GTK_BOX(app_raiz), criar_menu(e));
     gtk_box_append(GTK_BOX(app_raiz), direita);
 
     gtk_window_set_child(GTK_WINDOW(e->janela), app_raiz);
+    gtk_window_get_resizable(GTK_WINDOW(e->janela)), min_w, min_h, nat_w, nat_h);
     gtk_window_present(GTK_WINDOW(e->janela));
 }
 
