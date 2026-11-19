@@ -1,4 +1,5 @@
 bin/
+usuarios.csv
 .vscode/
 obj/
 *.pdf
