@@ -8,6 +8,8 @@ typedef struct {
     GtkWidget *total;
 } TelaReservas;
 
+static void ao_editar(GtkButton *b, gpointer dados);
+
 static void estilo_reservas(void) {
     GtkCssProvider *css = gtk_css_provider_new();
     gtk_css_provider_load_from_string(css,
@@ -73,6 +75,7 @@ static void recarregar(TelaReservas *t) {
         GtkWidget *caixa = linha(dia, hor, r->atividade, r->sala, r->tipo, r->responsavel);
         gtk_widget_add_css_class(gtk_widget_get_first_child(caixa), "negrito");
         GtkWidget *item = gtk_list_box_row_new();
+        g_object_set_data(G_OBJECT(item), "id", GINT_TO_POINTER(r->idReserva));
         gtk_list_box_row_set_child(GTK_LIST_BOX_ROW(item), caixa);
         gtk_list_box_append(GTK_LIST_BOX(t->lista), item);
     }
@@ -114,6 +117,11 @@ GtkWidget *tela_reservas_criar(Estado *e) {
     gtk_widget_set_valign(b, GTK_ALIGN_START);
     g_signal_connect(b, "clicked", G_CALLBACK(ao_nova), t);
     gtk_box_append(GTK_BOX(topo), textos);
+    GtkWidget *b_ed = gtk_button_new_with_label("Editar reserva");
+    gtk_widget_add_css_class(b_ed, "secundario");
+    gtk_widget_set_valign(b_ed, GTK_ALIGN_START);
+    g_signal_connect(b_ed, "clicked", G_CALLBACK(ao_editar), t);
+    gtk_box_append(GTK_BOX(topo), b_ed);
     gtk_box_append(GTK_BOX(topo), b);
     gtk_box_append(GTK_BOX(pagina), topo);
 
@@ -132,4 +140,15 @@ GtkWidget *tela_reservas_criar(Estado *e) {
     g_signal_connect(pagina, "map", G_CALLBACK(ao_mostrar), t);
     recarregar(t);
     return pagina;
+}
+
+static void ao_editar(GtkButton *b, gpointer dados) {
+    TelaReservas *t = (TelaReservas *) dados;
+    GtkListBoxRow *linha = gtk_list_box_get_selected_row(GTK_LIST_BOX(t->lista));
+    if (!linha) {
+        interface_mensagem(t->e, "Selecione uma reserva na lista para editar.", TRUE);
+        return;
+    }
+    nova_reserva_editar(GPOINTER_TO_INT(g_object_get_data(G_OBJECT(linha), "id")));
+    interface_ir_para(t->e, "nova");
 }

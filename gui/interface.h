@@ -19,7 +19,6 @@ void interface_ir_para(Estado *e, const char *tela);
 void estilo_aplicar(void);
 void login_sair(GtkButton *b, gpointer dados);
 
-GtkWidget *tela_login_criar(Estado *e);
 GtkWidget *tela_inicio_criar(Estado *e);
 GtkWidget *tela_visao_criar(Estado *e);
 GtkWidget *tela_busca_criar(Estado *e);
@@ -27,4 +26,13 @@ GtkWidget *tela_reservas_criar(Estado *e);
 GtkWidget *tela_nova_reserva_criar(Estado *e);
 GtkWidget *tela_salas_criar(Estado *e);
 void nova_reserva_preencher(const char *sala, int dia, int ini, int fim, int pessoas);
+GtkWidget *tema_criar_chave(void);
+GtkWidget *seletor_data_criar(int data, void (*ao_mudar)(gpointer), gpointer dados);
+int seletor_data_get(GtkWidget *w);
+void seletor_data_set(GtkWidget *w, int data);
+GtkWidget *logo_poli_criar(void);
+void visual_aplicar(void);
+void nova_reserva_editar(int id);
+void acao_log(const char *fmt, ...) G_GNUC_PRINTF(1, 2);
+const char *acao_hora(int min);
 #endif

@@ -1,39 +1,30 @@
 #include "interface.h"
 #include <string.h>
 #include <stdlib.h>
+#include <time.h>
 
-/* PROVISÓRIO: "hoje" e "agora" fixos, como no protótipo (sexta, 13/11, 10:30).
-   Na integração, trocar pelo relógio do computador. */
-#define HOJE_TESTE   DATA_PADRAO
-#define AGORA_TESTE  (10 * 60 + 30)
+#define HOJE_TESTE DATA_PADRAO
+#define AGORA_TESTE (10 * 60 + 30)
 
 typedef struct {
     Estado *e;
-    GtkWidget *titulo, *sub, *cartao_conf;
-    GtkWidget *n_livres, *n_uso, *n_ocup, *n_conf;
-    GtkWidget *lista_livres, *lista_prox;
+    GtkWidget *titulo, *sub;
+    GtkWidget *rotulo_livres;
+    GtkWidget *lista_livres, *lista_prox, *lista_dias;
 } TelaInicio;
 
 typedef struct { int sala; int ate; } Livre;
 
-static const char *DIAS[]  = { "", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "Domingo" };
-static const char *MESES[] = { "", "janeiro", "fevereiro", "março", "abril", "maio", "junho",
-                               "julho", "agosto", "setembro", "outubro", "novembro", "dezembro" };
-
-static void estilo_inicio(void) {
-    GtkCssProvider *css = gtk_css_provider_new();
-    gtk_css_provider_load_from_string(css,
-        ".cartao-info { border: 1px solid #e1e6ef; border-radius: 6px; padding: 14px 18px; min-width: 150px; }"
-        ".cartao-conflito { border: 1px solid #c8102e; }"
-        ".numero-grande { font-family: Georgia, serif; font-size: 30px; font-weight: bold; }"
-        ".secao { font-family: Georgia, serif; font-size: 18px; margin-top: 8px; margin-bottom: 4px; }"
-        ".linha-info { padding: 8px 0; border-bottom: 1px solid #e1e6ef; }"
-        ".negrito { font-weight: bold; }"
-    );
-    gtk_style_context_add_provider_for_display(gdk_display_get_default(),
-        GTK_STYLE_PROVIDER(css), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
-    g_object_unref(css);
-}
+static const char *DIAS_SEMANA[] = {
+    "Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"
+};
+static const char *DIAS_CURTOS[] = {
+    "Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"
+};
+static const char *MESES[] = {
+    "", "janeiro", "fevereiro", "março", "abril", "maio", "junho",
+    "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"
+};
 
 static void limpar_caixa(GtkWidget *caixa) {
     GtkWidget *f;
@@ -41,50 +32,53 @@ static void limpar_caixa(GtkWidget *caixa) {
         gtk_box_remove(GTK_BOX(caixa), f);
 }
 
-static GtkWidget *cartao(const char *legenda, GtkWidget **numero) {
-    GtkWidget *c = gtk_box_new(GTK_ORIENTATION_VERTICAL, 2);
-    gtk_widget_add_css_class(c, "cartao-info");
-    gtk_widget_set_hexpand(c, TRUE);
-    *numero = gtk_label_new("0");
-    gtk_widget_add_css_class(*numero, "numero-grande");
-    gtk_label_set_xalign(GTK_LABEL(*numero), 0);
-    GtkWidget *l = gtk_label_new(legenda);
-    gtk_widget_add_css_class(l, "subtitulo");
-    gtk_label_set_xalign(GTK_LABEL(l), 0);
-    gtk_box_append(GTK_BOX(c), *numero);
-    gtk_box_append(GTK_BOX(c), l);
-    return c;
-}
+static GtkWidget *secao_bloco(const char *titulo_inicial, const char *nome_icone,
+                              GCallback ao_ver_todas, gpointer dados,
+                              GtkWidget **rotulo_tit, GtkWidget **lista) {
+    GtkWidget *painel = gtk_box_new(GTK_ORIENTATION_VERTICAL, 12);
+    gtk_widget_add_css_class(painel, "painel-lista");
+    gtk_widget_set_hexpand(painel, TRUE);
 
-static GtkWidget *secao(const char *titulo, GtkWidget **lista) {
-    GtkWidget *coluna = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
-    gtk_widget_set_hexpand(coluna, TRUE);
-    GtkWidget *t = gtk_label_new(titulo);
+    GtkWidget *cab = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
+    GtkWidget *ic = gtk_image_new_from_icon_name(nome_icone);
+    gtk_image_set_pixel_size(GTK_IMAGE(ic), 20);
+
+    GtkWidget *t = gtk_label_new(titulo_inicial);
     gtk_widget_add_css_class(t, "secao");
     gtk_label_set_xalign(GTK_LABEL(t), 0);
-    gtk_box_append(GTK_BOX(coluna), t);
+    gtk_widget_set_hexpand(t, TRUE);
+    if (rotulo_tit) *rotulo_tit = t;
+
+    GtkWidget *link = gtk_button_new_with_label("Ver todas →");
+    gtk_widget_add_css_class(link, "link-ver-todas");
+    g_signal_connect(link, "clicked", ao_ver_todas, dados);
+
+    gtk_box_append(GTK_BOX(cab), ic);
+    gtk_box_append(GTK_BOX(cab), t);
+    gtk_box_append(GTK_BOX(cab), link);
+    gtk_box_append(GTK_BOX(painel), cab);
+
     *lista = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
-    gtk_box_append(GTK_BOX(coluna), *lista);
-    return coluna;
+    gtk_box_append(GTK_BOX(painel), *lista);
+    return painel;
 }
 
-static GtkWidget *linha_info(const char *a, const char *b, const char *c) {
-    GtkWidget *caixa = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 14);
+static GtkWidget *linha_livre(const char *sala, const char *lugares, const char *ate) {
+    GtkWidget *caixa = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 16);
     gtk_widget_add_css_class(caixa, "linha-info");
 
-    GtkWidget *la = gtk_label_new(a);
-    gtk_label_set_xalign(GTK_LABEL(la), 0);
-    gtk_widget_set_size_request(la, 80, -1);
-    gtk_widget_add_css_class(la, "negrito");
+    GtkWidget *la = gtk_label_new(sala);
+    gtk_label_set_xalign(GTK_LABEL(la), 0.5);
+    gtk_widget_add_css_class(la, "badge-sala");
 
-    GtkWidget *lb = gtk_label_new(b);
+    GtkWidget *lb = gtk_label_new(lugares);
     gtk_label_set_xalign(GTK_LABEL(lb), 0);
     gtk_widget_set_hexpand(lb, TRUE);
     gtk_label_set_ellipsize(GTK_LABEL(lb), PANGO_ELLIPSIZE_END);
 
-    GtkWidget *lc = gtk_label_new(c);
+    GtkWidget *lc = gtk_label_new(ate);
     gtk_label_set_xalign(GTK_LABEL(lc), 1);
-    gtk_widget_add_css_class(lc, "subtitulo");
+    gtk_widget_add_css_class(lc, "texto-destaque");
 
     gtk_box_append(GTK_BOX(caixa), la);
     gtk_box_append(GTK_BOX(caixa), lb);
@@ -92,15 +86,56 @@ static GtkWidget *linha_info(const char *a, const char *b, const char *c) {
     return caixa;
 }
 
-static void numero(GtkWidget *l, int n) {
-    char buf[16];
-    g_snprintf(buf, sizeof buf, "%d", n);
-    gtk_label_set_text(GTK_LABEL(l), buf);
+static GtkWidget *linha_ocupacao(const char *hora, const char *atividade,
+                                 const char *sala, gboolean cabecalho) {
+    GtkWidget *caixa = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 16);
+    gtk_widget_add_css_class(caixa, cabecalho ? "cabecalho-tabela" : "linha-info");
+
+    GtkWidget *la = gtk_label_new(hora);
+    gtk_label_set_xalign(GTK_LABEL(la), 0);
+    gtk_widget_set_size_request(la, 75, -1);
+    if (!cabecalho) gtk_widget_add_css_class(la, "negrito");
+
+    GtkWidget *lb = gtk_label_new(atividade);
+    gtk_label_set_xalign(GTK_LABEL(lb), 0);
+    gtk_widget_set_hexpand(lb, TRUE);
+    gtk_label_set_ellipsize(GTK_LABEL(lb), PANGO_ELLIPSIZE_END);
+
+    GtkWidget *lc = gtk_label_new(sala);
+    gtk_label_set_xalign(GTK_LABEL(lc), 1);
+    gtk_widget_set_size_request(lc, 85, -1);
+    if (!cabecalho) gtk_widget_add_css_class(lc, "texto-destaque");
+
+    gtk_box_append(GTK_BOX(caixa), la);
+    gtk_box_append(GTK_BOX(caixa), lb);
+    gtk_box_append(GTK_BOX(caixa), lc);
+    return caixa;
+}
+
+static int contar_reservas_dia(int data_yyyymmdd) {
+    int total = 0;
+    for (int i = 0; i < g_n_reservas; i++) {
+        if (g_reservas[i].dia == data_yyyymmdd) total++;
+    }
+    return total;
+}
+
+static int avancar_dia(int data_yyyymmdd, int delta_dias) {
+    GDate *d = g_date_new_dmy(data_yyyymmdd % 100, (data_yyyymmdd / 100) % 100, data_yyyymmdd / 10000);
+    if (!d || !g_date_valid(d)) {
+        if (d) g_date_free(d);
+        return data_yyyymmdd;
+    }
+    if (delta_dias >= 0) g_date_add_days(d, (guint) delta_dias);
+    else g_date_subtract_days(d, (guint) (-delta_dias));
+    int out = g_date_get_year(d) * 10000 + g_date_get_month(d) * 100 + g_date_get_day(d);
+    g_date_free(d);
+    return out;
 }
 
 static int cmp_livre(const void *pa, const void *pb) {
     const Livre *a = (const Livre *) pa, *b = (const Livre *) pb;
-    if (a->ate != b->ate) return b->ate - a->ate;     /* livre por mais tempo primeiro */
+    if (a->ate != b->ate) return b->ate - a->ate;
     return a->sala - b->sala;
 }
 
@@ -111,61 +146,55 @@ static int cmp_prox(const void *pa, const void *pb) {
 }
 
 static void atualizar(TelaInicio *t) {
-    int hoje = HOJE_TESTE, agora = AGORA_TESTE;
+    int hoje_dados = HOJE_TESTE, agora = AGORA_TESTE;
 
-    /* saudação e data */
+    time_t agora_t = time(NULL);
+    struct tm *tm_local = localtime(&agora_t);
+    int hora_atual = tm_local ? tm_local->tm_hour : (agora / 60);
+
     const char *nome = t->e->rotulo_nome ? gtk_label_get_text(GTK_LABEL(t->e->rotulo_nome)) : "";
     gchar **partes = g_strsplit(nome, " ", 2);
     const char *primeiro = (partes[0] != NULL) ? partes[0] : "";
-    const char *saud = agora < 12 * 60 ? "Bom dia" : (agora < 18 * 60 ? "Boa tarde" : "Boa noite");
+    const char *saud = hora_atual < 12 ? "Bom dia" : (hora_atual < 18 ? "Boa tarde" : "Boa noite");
     char *tit = primeiro[0] ? g_strdup_printf("%s, %s", saud, primeiro) : g_strdup(saud);
     gtk_label_set_text(GTK_LABEL(t->titulo), tit);
     g_free(tit);
     g_strfreev(partes);
 
-    GDate *d = g_date_new_dmy(hoje % 100, (hoje / 100) % 100, hoje / 10000);
-    int wd = g_date_get_weekday(d);
-    g_date_free(d);
-    char *data = g_strdup_printf("%s, %d de %s, %02d:%02d", DIAS[wd], hoje % 100,
-                                 MESES[(hoje / 100) % 100], agora / 60, agora % 60);
-    gtk_label_set_text(GTK_LABEL(t->sub), data);
-    g_free(data);
+    if (tm_local) {
+        int wd = tm_local->tm_wday;
+        int dia = tm_local->tm_mday;
+        int mes = tm_local->tm_mon + 1;
+        int ano = tm_local->tm_year + 1900;
+        char *data = g_strdup_printf("%s, %d de %s, %d", DIAS_SEMANA[wd], dia, MESES[mes], ano);
+        gtk_label_set_text(GTK_LABEL(t->sub), data);
+        g_free(data);
+    }
 
-    /* salas livres e em uso agora */
+    /* 1) Livres agora */
     Livre livres[MAX_SALAS];
-    int nl = 0, nuso = 0;
+    int nl = 0;
     for (int s = 0; s < g_n_salas; s++) {
         int ocupada = 0, ate = 24 * 60;
         for (int i = 0; i < g_n_reservas; i++) {
             const ReservaTeste *r = &g_reservas[i];
-            if (r->dia != hoje || strcmp(r->sala, g_salas[s].nome) != 0) continue;
+            if (r->dia != hoje_dados || strcmp(r->sala, g_salas[s].nome) != 0) continue;
             if (r->ini <= agora && agora < r->fim) ocupada = 1;
             else if (r->ini > agora && r->ini < ate) ate = r->ini;
         }
-        if (ocupada) nuso++;
-        else { livres[nl].sala = s; livres[nl].ate = ate; nl++; }
+        if (!ocupada) {
+            livres[nl].sala = s;
+            livres[nl].ate = ate;
+            nl++;
+        }
     }
     qsort(livres, nl, sizeof(Livre), cmp_livre);
 
-    /* ocupações de hoje e conflitos */
-    int ocup = 0, conflitos = 0;
-    for (int i = 0; i < g_n_reservas; i++) {
-        if (g_reservas[i].dia != hoje) continue;
-        ocup++;
-        for (int j = i + 1; j < g_n_reservas; j++) {
-            if (g_reservas[j].dia != hoje || strcmp(g_reservas[i].sala, g_reservas[j].sala) != 0) continue;
-            if (g_reservas[i].ini < g_reservas[j].fim && g_reservas[j].ini < g_reservas[i].fim) conflitos++;
-        }
-    }
+    char *tit_livres = g_strdup_printf("%d %s livre%s agora",
+        nl, nl == 1 ? "sala" : "salas", nl == 1 ? "" : "s");
+    gtk_label_set_text(GTK_LABEL(t->rotulo_livres), tit_livres);
+    g_free(tit_livres);
 
-    numero(t->n_livres, nl);
-    numero(t->n_uso, nuso);
-    numero(t->n_ocup, ocup);
-    numero(t->n_conf, conflitos);
-    if (conflitos > 0) gtk_widget_add_css_class(t->cartao_conf, "cartao-conflito");
-    else gtk_widget_remove_css_class(t->cartao_conf, "cartao-conflito");
-
-    /* lista "Livres agora" */
     limpar_caixa(t->lista_livres);
     if (nl == 0) {
         GtkWidget *l = gtk_label_new("Nenhuma sala livre agora.");
@@ -183,13 +212,13 @@ static void atualizar(TelaInicio *t) {
             dados_hora_texto(livres[k].ate, h, sizeof h);
             g_snprintf(ate, sizeof ate, "Livre até %s", h);
         }
-        gtk_box_append(GTK_BOX(t->lista_livres), linha_info(sl->nome, lug, ate));
+        gtk_box_append(GTK_BOX(t->lista_livres), linha_livre(sl->nome, lug, ate));
     }
 
-    /* lista "Próximas ocupações" */
+    /* 2) Próximas ocupações (abaixo de Livres agora) */
     int prox[MAX_RESERVAS], np = 0;
     for (int i = 0; i < g_n_reservas; i++)
-        if (g_reservas[i].dia == hoje && g_reservas[i].ini > agora) prox[np++] = i;
+        if (g_reservas[i].dia == hoje_dados && g_reservas[i].ini > agora) prox[np++] = i;
     qsort(prox, np, sizeof(int), cmp_prox);
 
     limpar_caixa(t->lista_prox);
@@ -198,98 +227,102 @@ static void atualizar(TelaInicio *t) {
         gtk_widget_add_css_class(l, "subtitulo");
         gtk_label_set_xalign(GTK_LABEL(l), 0);
         gtk_box_append(GTK_BOX(t->lista_prox), l);
+    } else {
+        gtk_box_append(GTK_BOX(t->lista_prox), linha_ocupacao("HORÁRIO", "ATIVIDADE", "SALA", TRUE));
     }
     for (int k = 0; k < np && k < 4; k++) {
         const ReservaTeste *r = &g_reservas[prox[k]];
         char h[8];
         dados_hora_texto(r->ini, h, sizeof h);
-        gtk_box_append(GTK_BOX(t->lista_prox), linha_info(h, r->atividade, r->sala));
+        gtk_box_append(GTK_BOX(t->lista_prox), linha_ocupacao(h, r->atividade, r->sala, FALSE));
     }
+
+    /* 3) Faixa compacta de dias com movimento (diferencial sem duplicar seletor/grade) */
+    limpar_caixa(t->lista_dias);
+    GtkWidget *faixa = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
+    gtk_box_set_homogeneous(GTK_BOX(faixa), TRUE);
+
+    for (int offset = 0; offset < 5; offset++) {
+        int d_cod = avancar_dia(hoje_dados, offset);
+        int qtd_res = contar_reservas_dia(d_cod);
+
+        GDate *gd = g_date_new_dmy(d_cod % 100, (d_cod / 100) % 100, d_cod / 10000);
+        int wd = gd ? g_date_get_weekday(gd) : 0; /* GDateWeekday: 1=Seg .. 7=Dom */
+        int idx_curto = (wd >= 1 && wd <= 7) ? (wd % 7) : 0;
+        if (gd) g_date_free(gd);
+
+        GtkWidget *cel = gtk_box_new(GTK_ORIENTATION_VERTICAL, 2);
+        gtk_widget_add_css_class(cel, "cartao-info");
+        gtk_widget_set_hexpand(cel, TRUE);
+
+        char topo_dia[32];
+        g_snprintf(topo_dia, sizeof topo_dia, "%s · %02d/%02d",
+            DIAS_CURTOS[idx_curto], d_cod % 100, (d_cod / 100) % 100);
+        GtkWidget *l_dia = gtk_label_new(topo_dia);
+        gtk_widget_add_css_class(l_dia, "negrito");
+        gtk_label_set_xalign(GTK_LABEL(l_dia), 0);
+
+        char info_res[36];
+        if (qtd_res == 0) g_strlcpy(info_res, "Sem reservas", sizeof info_res);
+        else g_snprintf(info_res, sizeof info_res, "%d %s", qtd_res, qtd_res == 1 ? "reserva" : "reservas");
+        GtkWidget *l_qtd = gtk_label_new(info_res);
+        gtk_widget_add_css_class(l_qtd, "subtitulo");
+        gtk_label_set_xalign(GTK_LABEL(l_qtd), 0);
+
+        gtk_box_append(GTK_BOX(cel), l_dia);
+        gtk_box_append(GTK_BOX(cel), l_qtd);
+        gtk_box_append(GTK_BOX(faixa), cel);
+    }
+    gtk_box_append(GTK_BOX(t->lista_dias), faixa);
 }
 
 static void ao_mostrar(GtkWidget *w, gpointer dados) { atualizar((TelaInicio *) dados); }
-static void ao_nova(GtkButton *b, gpointer d)    { interface_ir_para(((TelaInicio *) d)->e, "nova"); }
-static void ao_buscar(GtkButton *b, gpointer d)  { interface_ir_para(((TelaInicio *) d)->e, "busca"); }
-static void ao_grade(GtkButton *b, gpointer d)   { interface_ir_para(((TelaInicio *) d)->e, "visao"); }
-static void ao_exportar(GtkButton *b, gpointer d) {
-    interface_mensagem(((TelaInicio *) d)->e,
-        "Exportar o dia: será ligado ao módulo de persistência (Laura).", FALSE);
-}
+static void ao_buscar(GtkButton *b, gpointer d) { interface_ir_para(((TelaInicio *) d)->e, "busca"); }
+static void ao_reservas(GtkButton *b, gpointer d) { interface_ir_para(((TelaInicio *) d)->e, "reservas"); }
+static void ao_visao(GtkButton *b, gpointer d) { interface_ir_para(((TelaInicio *) d)->e, "visao"); }
+
 
 GtkWidget *tela_inicio_criar(Estado *e) {
     TelaInicio *t = g_new0(TelaInicio, 1);
     t->e = e;
-    estilo_inicio();
 
-    GtkWidget *pagina = gtk_box_new(GTK_ORIENTATION_VERTICAL, 16);
+    GtkWidget *pagina = gtk_box_new(GTK_ORIENTATION_VERTICAL, 20);
     gtk_widget_set_margin_top(pagina, 28);
     gtk_widget_set_margin_bottom(pagina, 24);
-    gtk_widget_set_margin_start(pagina, 32);
-    gtk_widget_set_margin_end(pagina, 32);
+    gtk_widget_set_margin_start(pagina, 36);
+    gtk_widget_set_margin_end(pagina, 36);
 
-    /* topo */
-    GtkWidget *topo = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 12);
-    GtkWidget *textos = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
-    gtk_widget_set_hexpand(textos, TRUE);
+    GtkWidget *topo = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
     t->titulo = gtk_label_new("");
     gtk_widget_add_css_class(t->titulo, "titulo");
     gtk_label_set_xalign(GTK_LABEL(t->titulo), 0);
+
     t->sub = gtk_label_new("");
     gtk_widget_add_css_class(t->sub, "subtitulo");
     gtk_label_set_xalign(GTK_LABEL(t->sub), 0);
-    gtk_box_append(GTK_BOX(textos), t->titulo);
-    gtk_box_append(GTK_BOX(textos), t->sub);
-    GtkWidget *b_nova = gtk_button_new_with_label("Nova reserva");
-    gtk_widget_add_css_class(b_nova, "primario");
-    gtk_widget_set_valign(b_nova, GTK_ALIGN_START);
-    g_signal_connect(b_nova, "clicked", G_CALLBACK(ao_nova), t);
-    gtk_box_append(GTK_BOX(topo), textos);
-    gtk_box_append(GTK_BOX(topo), b_nova);
+
+    gtk_box_append(GTK_BOX(topo), t->titulo);
+    gtk_box_append(GTK_BOX(topo), t->sub);
     gtk_box_append(GTK_BOX(pagina), topo);
 
-    /* cartões */
-    GtkWidget *cartoes = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 12);
-    gtk_box_set_homogeneous(GTK_BOX(cartoes), TRUE);
-    gtk_box_append(GTK_BOX(cartoes), cartao("salas livres agora", &t->n_livres));
-    gtk_box_append(GTK_BOX(cartoes), cartao("salas em uso", &t->n_uso));
-    gtk_box_append(GTK_BOX(cartoes), cartao("ocupações hoje", &t->n_ocup));
-    t->cartao_conf = cartao("conflitos a resolver", &t->n_conf);
-    gtk_box_append(GTK_BOX(cartoes), t->cartao_conf);
-    gtk_box_append(GTK_BOX(pagina), cartoes);
+    /* Próximas ocupações embaixo de Livres agora */
+    gtk_box_append(GTK_BOX(pagina),
+        secao_bloco("Livres agora", "appointment-soon-symbolic",
+                    G_CALLBACK(ao_buscar), t, &t->rotulo_livres, &t->lista_livres));
 
-    /* duas listas lado a lado */
-    GtkWidget *colunas = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 32);
-    gtk_box_set_homogeneous(GTK_BOX(colunas), TRUE);
-    gtk_box_append(GTK_BOX(colunas), secao("Livres agora", &t->lista_livres));
-    gtk_box_append(GTK_BOX(colunas), secao("Próximas ocupações", &t->lista_prox));
-    gtk_box_append(GTK_BOX(pagina), colunas);
+    gtk_box_append(GTK_BOX(pagina),
+        secao_bloco("Próximas ocupações", "view-list-symbolic",
+                    G_CALLBACK(ao_reservas), t, NULL, &t->lista_prox));
 
-    /* ações rápidas */
-    GtkWidget *tit_acoes = gtk_label_new("Ações rápidas");
-    gtk_widget_add_css_class(tit_acoes, "secao");
-    gtk_label_set_xalign(GTK_LABEL(tit_acoes), 0);
-    gtk_box_append(GTK_BOX(pagina), tit_acoes);
-
-    GtkWidget *acoes = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
-    GtkWidget *a1 = gtk_button_new_with_label("Buscar uma sala");
-    GtkWidget *a2 = gtk_button_new_with_label("Ver a grade");
-    GtkWidget *a3 = gtk_button_new_with_label("Exportar o dia");
-    gtk_widget_add_css_class(a1, "secundario");
-    gtk_widget_add_css_class(a2, "secundario");
-    gtk_widget_add_css_class(a3, "secundario");
-    g_signal_connect(a1, "clicked", G_CALLBACK(ao_buscar), t);
-    g_signal_connect(a2, "clicked", G_CALLBACK(ao_grade), t);
-    g_signal_connect(a3, "clicked", G_CALLBACK(ao_exportar), t);
-    gtk_box_append(GTK_BOX(acoes), a1);
-    gtk_box_append(GTK_BOX(acoes), a2);
-    gtk_box_append(GTK_BOX(acoes), a3);
-    gtk_box_append(GTK_BOX(pagina), acoes);
+    gtk_box_append(GTK_BOX(pagina),
+        secao_bloco("Movimento nos próximos dias", "x-office-calendar-symbolic",
+                    G_CALLBACK(ao_visao), t, NULL, &t->lista_dias));
 
     GtkWidget *rolagem = gtk_scrolled_window_new();
-    gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(rolagem), GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
+    gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(rolagem),
+        GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
     gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(rolagem), pagina);
     g_signal_connect(rolagem, "map", G_CALLBACK(ao_mostrar), t);
-
     atualizar(t);
     return rolagem;
 }
