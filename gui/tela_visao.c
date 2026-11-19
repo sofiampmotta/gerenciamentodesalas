@@ -32,24 +32,18 @@ typedef struct { char sala[64]; char tipo[16]; int dia; } FaixaOc;
 static void estilo_visao(void) {
     GtkCssProvider *css = gtk_css_provider_new();
     gtk_css_provider_load_from_string(css,
-        ".card-visao { border: 1px solid #e1e6ef; border-radius: 6px; padding: 16px; }"
-        ".cab-quadro { background: #eef2f9; border-radius: 4px; }"
-        ".cab-quadro label { color: #12274f; font-weight: 700; font-size: 12px; padding: 7px 0; }"
+        ".card-visao { border-radius: 10px; padding: 16px 18px; }"
+        ".cab-quadro { border-radius: 6px; }"
+        ".cab-quadro label { font-weight: 700; font-size: 12px; padding: 7px 0; }"
         ".grupo-quadro { margin-top: 6px; }"
-        ".bloco-hora { background: #eef2f9; border-radius: 4px; color: #12274f; font-weight: 700; }"
-        ".linha-quadro { border-bottom: 1px solid #e1e6ef; padding: 9px 0; }"
-        ".linha-ocup { border-bottom: 1px solid #e1e6ef; padding: 10px 0; }"
-        ".resumo-linha { border-bottom: 1px solid #e1e6ef; padding: 8px 0; }"
+        ".bloco-hora { border-radius: 6px; font-weight: 700; }"
+        ".linha-quadro { padding: 9px 0; }"
+        ".linha-ocup { padding: 10px 0; }"
+        ".resumo-linha { padding: 8px 0; }"
         ".chip { border-radius: 10px; padding: 1px 9px; font-size: 12px; font-weight: 600; }"
         ".chip-monitoria { background: #d9f2e6; color: #1b6b45; }"
         ".chip-extensao { background: #ece0fa; color: #5b2f91; }"
         ".chip-evento { background: #fbe0e4; color: #a30f2b; }"
-        "button.btn-pdf { background: #ffffff; background-image: none; color: #c8102e;"
-        "  border: 1px solid #c8102e; border-radius: 4px; font-weight: 700; padding: 9px 16px; box-shadow: none; }"
-        "button.btn-csv { background: #ffffff; background-image: none; color: #1e7e4a;"
-        "  border: 1px solid #1e7e4a; border-radius: 4px; font-weight: 700; padding: 9px 16px; box-shadow: none; }"
-        "menubutton.secundario > button { background: #ffffff; background-image: none; color: #12274f;"
-        "  border: 1px solid #1f4e8c; border-radius: 4px; font-weight: 700; padding: 10px 20px; box-shadow: none; }"
     );
     gtk_style_context_add_provider_for_display(gdk_display_get_default(),
         GTK_STYLE_PROVIDER(css), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
@@ -189,7 +183,7 @@ static void desenhar_oc(GtkDrawingArea *area, cairo_t *cr, int w, int h, gpointe
     cairo_rectangle(cr, 0, 0, w, barra);
     cairo_fill(cr);
 
-    cairo_set_source_rgb(cr, 0.23, 0.51, 0.96);
+    cairo_set_source_rgb(cr, 0.62, 0.11, 0.14);
     for (int i = 0; i < g_n_reservas; i++) {
         const ReservaTeste *o = &g_reservas[i];
         if (o->dia != f->dia || strcmp(o->sala, f->sala) != 0) continue;
@@ -198,7 +192,8 @@ static void desenhar_oc(GtkDrawingArea *area, cairo_t *cr, int w, int h, gpointe
         cairo_fill(cr);
     }
 
-    cairo_set_source_rgb(cr, 0.36, 0.44, 0.56); cairo_select_font_face(cr, "Segoe UI", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
+    cairo_set_source_rgb(cr, 0.36, 0.44, 0.56);
+    cairo_select_font_face(cr, "Segoe UI", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
     cairo_set_font_size(cr, 13);
     int marcas[4] = { 8, 12, 16, 20 };
     for (int i = 0; i < 4; i++) {
@@ -379,10 +374,6 @@ static void ao_aplicar(GtkButton *b, gpointer dados) {
     interface_mensagem(t->e, "Filtros aplicados.", FALSE);
 }
 
-static void ao_nova(GtkButton *b, gpointer dados) {
-    interface_ir_para(((TelaVisao *) dados)->e, "nova");
-}
-
 static GtkWidget *coluna_filtro(const char *titulo, GtkWidget *campo) {
     GtkWidget *c = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
     GtkWidget *l = gtk_label_new(titulo);
@@ -415,7 +406,7 @@ GtkWidget *tela_visao_criar(Estado *e) {
     gtk_widget_set_margin_start(pagina, 32);
     gtk_widget_set_margin_end(pagina, 32);
 
-    /* topo: título, "Exportar grade" e "Nova reserva" */
+    /* topo: título e "Exportar grade" à direita */
     GtkWidget *topo = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
     GtkWidget *textos = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
     gtk_widget_set_hexpand(textos, TRUE);
@@ -448,14 +439,8 @@ GtkWidget *tela_visao_criar(Estado *e) {
     gtk_popover_set_child(GTK_POPOVER(t->popover), op);
     gtk_menu_button_set_popover(GTK_MENU_BUTTON(menu), t->popover);
 
-    GtkWidget *b_nova = gtk_button_new_with_label("Nova reserva");
-    gtk_widget_add_css_class(b_nova, "primario");
-    gtk_widget_set_valign(b_nova, GTK_ALIGN_START);
-    g_signal_connect(b_nova, "clicked", G_CALLBACK(ao_nova), t);
-
     gtk_box_append(GTK_BOX(topo), textos);
     gtk_box_append(GTK_BOX(topo), menu);
-    gtk_box_append(GTK_BOX(topo), b_nova);
     gtk_box_append(GTK_BOX(pagina), topo);
 
     /* filtros */
@@ -477,7 +462,7 @@ GtkWidget *tela_visao_criar(Estado *e) {
     gtk_box_append(GTK_BOX(filtros), b_aplicar);
     gtk_box_append(GTK_BOX(pagina), filtros);
 
-    /* aba 1: quadro de horários + resumo + exportação */
+    /* aba 1: quadro de horários + resumo */
     GtkWidget *p1 = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 16);
     gtk_widget_set_margin_top(p1, 12);
 
@@ -512,24 +497,6 @@ GtkWidget *tela_visao_criar(Estado *e) {
         gtk_box_append(GTK_BOX(c_res), lin[i]);
     }
     gtk_box_append(GTK_BOX(dir), c_res);
-
-    GtkWidget *c_exp = cartao_titulo("Exportação rápida");
-    GtkWidget *desc = gtk_label_new("Gerar o quadro de horários deste dia para impressão.");
-    gtk_widget_add_css_class(desc, "subtitulo");
-    gtk_label_set_xalign(GTK_LABEL(desc), 0);
-    gtk_label_set_wrap(GTK_LABEL(desc), TRUE);
-    gtk_label_set_max_width_chars(GTK_LABEL(desc), 26);
-    gtk_box_append(GTK_BOX(c_exp), desc);
-    GtkWidget *b_pdf = gtk_button_new_with_label("Exportar PDF");
-    GtkWidget *b_csv = gtk_button_new_with_label("Exportar CSV");
-    gtk_widget_add_css_class(b_pdf, "btn-pdf");
-    gtk_widget_add_css_class(b_csv, "btn-csv");
-    gtk_widget_set_margin_top(b_pdf, 8);
-    g_signal_connect(b_pdf, "clicked", G_CALLBACK(ao_pdf), t);
-    g_signal_connect(b_csv, "clicked", G_CALLBACK(ao_csv), t);
-    gtk_box_append(GTK_BOX(c_exp), b_pdf);
-    gtk_box_append(GTK_BOX(c_exp), b_csv);
-    gtk_box_append(GTK_BOX(dir), c_exp);
 
     gtk_box_append(GTK_BOX(p1), esq);
     gtk_box_append(GTK_BOX(p1), dir);

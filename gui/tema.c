@@ -30,9 +30,9 @@ static void ao_trocar(GObject *o, GParamSpec *p, gpointer dados) {
 GtkWidget *tema_criar_chave(void) {
     aplicar(FALSE);
 
-    GtkWidget *linha = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
-    gtk_widget_set_margin_bottom(linha, 12);
-    gtk_widget_set_margin_start(linha, 18);
+    GtkWidget *linha = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+    gtk_widget_set_margin_bottom(linha, 4);
+    gtk_widget_set_margin_start(linha, 14);
 
     GtkWidget *rotulo = gtk_label_new("Modo noturno");
     gtk_widget_add_css_class(rotulo, "usuario-info");
@@ -41,7 +41,7 @@ GtkWidget *tema_criar_chave(void) {
 
     GtkWidget *chave = gtk_switch_new();
     gtk_widget_set_valign(chave, GTK_ALIGN_CENTER);
-    gtk_widget_set_margin_end(chave, 24);
+    gtk_widget_set_margin_end(chave, 14);
     g_signal_connect(chave, "notify::active", G_CALLBACK(ao_trocar), NULL);
 
     gtk_box_append(GTK_BOX(linha), rotulo);
