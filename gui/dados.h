@@ -3,7 +3,7 @@
 #include <glib.h>
 
 #define MAX_SALAS     64
-#define MAX_RESERVAS  512
+#define MAX_RESERVAS  1024
 #define DATA_PADRAO   20261113   /* provisório: sexta, 13/11/2026 (dia do protótipo) */
 #define FIM_SEMESTRE  20261218   /* provisório: confirmar com o DATP */
 
