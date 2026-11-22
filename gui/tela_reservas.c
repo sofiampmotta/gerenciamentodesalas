@@ -68,7 +68,8 @@ static void recarregar(TelaReservas *t) {
     for (int k = 0; k < g_n_reservas; k++) {
         const ReservaTeste *r = &g_reservas[idx[k]];
         char dia[16], a[8], b[8], hor[24];
-        dados_data_texto(r->dia, dia, sizeof dia);
+        int dia_exibido = (r->dia == dados_dia_base_inicial()) ? dados_dia_hoje() : r->dia;
+        dados_data_texto(dia_exibido, dia, sizeof dia);
         dados_hora_texto(r->ini, a, sizeof a);
         dados_hora_texto(r->fim, b, sizeof b);
         g_snprintf(hor, sizeof hor, "%s às %s", a, b);

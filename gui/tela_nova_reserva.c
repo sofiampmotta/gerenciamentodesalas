@@ -24,6 +24,7 @@ typedef struct {
     GtkWidget *titulo_pag, *b_salvar_w;
 } TelaNova;
 
+
 static TelaNova *g_nova = NULL;
 
 static void estilo_nova(void) {
@@ -225,7 +226,7 @@ static void limpar(TelaNova *t) {
     gtk_editable_set_text(GTK_EDITABLE(t->descricao), "");
     gtk_drop_down_set_selected(GTK_DROP_DOWN(t->tipo), 0);
     gtk_spin_button_set_value(GTK_SPIN_BUTTON(t->pessoas), 30);
-    seletor_data_set(t->data, DATA_PADRAO);
+    seletor_data_set(t->data, dados_dia_hoje());
     gtk_drop_down_set_selected(GTK_DROP_DOWN(t->h_ini), (14 * 60 - PRIMEIRA_HORA) / PASSO);
     gtk_drop_down_set_selected(GTK_DROP_DOWN(t->h_fim), (16 * 60 - PRIMEIRA_HORA) / PASSO);
     gtk_drop_down_set_selected(GTK_DROP_DOWN(t->repeticao), 0);
@@ -324,7 +325,7 @@ GtkWidget *tela_nova_reserva_criar(Estado *e) {
     t->sala      = gtk_drop_down_new_from_strings(vazio);
     gtk_drop_down_set_enable_search(GTK_DROP_DOWN(t->sala), TRUE);
     t->pessoas   = spin(1, 1000, 30);
-    t->data = seletor_data_criar(DATA_PADRAO, ao_data, t);
+    t->data = seletor_data_criar(dados_dia_hoje(), ao_data, t);
     t->h_ini     = lista_horarios((14 * 60 - PRIMEIRA_HORA) / PASSO);
     t->h_fim     = lista_horarios((16 * 60 - PRIMEIRA_HORA) / PASSO);
     t->repeticao = gtk_drop_down_new_from_strings(REPETICOES);

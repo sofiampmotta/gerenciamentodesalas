@@ -29,6 +29,7 @@ typedef struct {
 typedef struct { int dia; char tipo[16]; char sala[64]; } Filtro;
 typedef struct { char sala[64]; char tipo[16]; int dia; } FaixaOc;
 
+
 static void estilo_visao(void) {
     GtkCssProvider *css = gtk_css_provider_new();
     gtk_css_provider_load_from_string(css,
@@ -444,7 +445,7 @@ GtkWidget *tela_visao_criar(Estado *e) {
     gtk_box_append(GTK_BOX(pagina), topo);
 
     /* filtros */
-    t->data = seletor_data_criar(DATA_PADRAO, NULL, NULL);
+    t->data = seletor_data_criar(dados_dia_hoje(), NULL, NULL);
     t->tipo = gtk_drop_down_new_from_strings(TIPOS);
     const char *so_todos[] = { "Todos os ambientes", NULL };
     t->sala = gtk_drop_down_new_from_strings(so_todos);

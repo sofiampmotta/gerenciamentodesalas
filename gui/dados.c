@@ -28,6 +28,22 @@ static void add_res(const char *ativ, const char *tipo, const char *resp,
     r->dia = dia; r->ini = ini; r->fim = fim;
 }
 
+static int g_dia_base_inicial = DATA_PADRAO;
+
+int dados_dia_hoje(void) {
+    GDateTime *agora = g_date_time_new_now_local();
+    if (!agora) return DATA_PADRAO;
+    int d = g_date_time_get_year(agora) * 10000
+          + g_date_time_get_month(agora) * 100
+          + g_date_time_get_day_of_month(agora);
+    g_date_time_unref(agora);
+    return dados_data_valida(d) ? d : DATA_PADRAO;
+}
+
+int dados_dia_base_inicial(void) {
+    return g_dia_base_inicial;
+}
+
 void dados_iniciar(void) {
     if (g_n_salas > 0) return;
     add_sala("I08", "Bloco I", 35, 1, 1);
@@ -38,7 +54,8 @@ void dados_iniciar(void) {
     add_sala("D05", "Bloco D", 25, 1, 1);
     add_sala("Auditório", "Prédio central", 120, 1, 1);
 
-    int d = DATA_PADRAO;
+    int d = dados_dia_hoje();
+    g_dia_base_inicial = d;
     add_res("Cálculo I",             "Aula",      "SIGA",              "I08",       d, H(8),  H(10));
     add_res("Monitoria de Cálculo",  "Monitoria", "Monitor de Cálculo", "I08",      d, H(16), H(18));
     add_res("Álgebra Linear",        "Aula",      "SIGA",              "B04",       d, H(10), H(12));

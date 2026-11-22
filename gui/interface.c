@@ -201,6 +201,7 @@ static void ativar(GtkApplication *app, gpointer dados) {
     GtkShortcut *shortcut = gtk_shortcut_new(trigger, action);
     gtk_shortcut_controller_add_shortcut(GTK_SHORTCUT_CONTROLLER(key_ctrl), shortcut);
     gtk_widget_add_controller(e->janela, key_ctrl);
+    gtk_window_maximize(GTK_WINDOW(e->janela));
     gtk_window_present(GTK_WINDOW(e->janela));
     g_signal_connect(e->janela, "notify::minimized", G_CALLBACK(ao_notificar_minimizado), NULL);
     interface_mensagem(e, "POLI - Gestão de Ambientes", FALSE);

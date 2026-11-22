@@ -146,10 +146,13 @@ static int cmp_prox(const void *pa, const void *pb) {
 }
 
 static void atualizar(TelaInicio *t) {
-    int hoje_dados = HOJE_TESTE, agora = AGORA_TESTE;
-
     time_t agora_t = time(NULL);
     struct tm *tm_local = localtime(&agora_t);
+
+    int hoje_dados = dados_dia_hoje();
+    int agora = tm_local
+        ? (tm_local->tm_hour * 60 + tm_local->tm_min)
+        : AGORA_TESTE;
     int hora_atual = tm_local ? tm_local->tm_hour : (agora / 60);
 
     const char *nome = t->e->rotulo_nome ? gtk_label_get_text(GTK_LABEL(t->e->rotulo_nome)) : "";
