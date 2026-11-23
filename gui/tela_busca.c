@@ -12,7 +12,7 @@
 typedef struct {
   Estado *e;
   GtkWidget *data, *h_ini, *h_fim, *pessoas, *c_proj, *c_ace;
-  GtkWidget *resultados;
+  GtkWidget *resultados, *rolagem_resultados;
 } TelaBusca;
 
 typedef struct {
@@ -21,7 +21,7 @@ typedef struct {
 typedef struct {
   TelaBusca *t;
   char sala[64];
-  int dia, ini, fim, pessoas;
+  int dia, ini, fim;
 } Pedido;
 typedef struct {
   char sala[64];
@@ -113,8 +113,9 @@ static void desenhar_faixa(GtkDrawingArea *area, cairo_t *cr, int w, int h,
   cairo_fill(cr);
 
   for (int i = 0; i < g_n_reservas; i++) {
-    const ReservaTeste *o = &g_reservas[i];
-    if (o->dia != f->dia || strcmp(o->sala, f->sala) != 0)
+    const ReservaVista *o = &g_reservas[i];
+    if (!dados_reserva_ocorre_em(o, f->dia) ||
+        strcmp(o->sala, f->sala) != 0)
       continue;
     cairo_set_source_rgb(cr, 0.624, 0.702, 0.831);
     cairo_rectangle(cr, px(o->ini, w), 0, px(o->fim, w) - px(o->ini, w), barra);
@@ -155,13 +156,11 @@ static GtkWidget *criar_faixa(const char *sala, int dia, int ini, int fim) {
 /* ---- botão Reservar: abre o formulário já preenchido ---- */
 static void ao_reservar(GtkButton *b, gpointer dados) {
   Pedido *p = (Pedido *)dados;
-  acao_log("reservar_sala_da_busca sala:%s dia:%d inicio:%s fim:%s pessoas:%d",
-           p->sala, p->dia, acao_hora(p->ini), acao_hora(p->fim), p->pessoas);
-  nova_reserva_preencher(p->sala, p->dia, p->ini, p->fim, p->pessoas);
+  nova_reserva_preencher(p->sala, p->dia, p->ini, p->fim);
   interface_ir_para(p->t->e, "nova");
 }
 
-static GtkWidget *cartao_sala(TelaBusca *t, const SalaTeste *sl,
+static GtkWidget *cartao_sala(TelaBusca *t, const SalaVista *sl,
                               const Filtros *f) {
   GtkWidget *cartao = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 18);
   gtk_widget_add_css_class(cartao, "cartao-sala");
@@ -195,7 +194,6 @@ static GtkWidget *cartao_sala(TelaBusca *t, const SalaTeste *sl,
   p->dia = f->dia;
   p->ini = f->ini;
   p->fim = f->fim;
-  p->pessoas = f->pessoas;
   GtkWidget *b = gtk_button_new_with_label("Reservar");
   gtk_widget_add_css_class(b, "primario");
   gtk_widget_set_valign(b, GTK_ALIGN_CENTER);
@@ -242,10 +240,11 @@ static void aviso(TelaBusca *t, const char *msg) {
 static void buscar(TelaBusca *t) {
   Filtros f;
   ler_filtros(t, &f);
-  acao_log("buscar_salas dia:%d inicio:%s fim:%s pessoas:%d projetor:%d "
-           "acessivel:%d",
-           f.dia, acao_hora(f.ini), acao_hora(f.fim), f.pessoas, f.proj, f.ace);
   limpar_caixa(t->resultados);
+  gtk_adjustment_set_value(
+      gtk_scrolled_window_get_vadjustment(
+          GTK_SCROLLED_WINDOW(t->rolagem_resultados)),
+      0);
 
   if (!dados_data_valida(f.dia)) {
     aviso(t, "Essa data não existe no calendário.");
@@ -256,13 +255,14 @@ static void buscar(TelaBusca *t) {
     return;
   }
 
-  int n_cabem = 0, n_rec = 0, achadas[MAX_SALAS], na = 0;
+  int n_cabem = 0, n_rec = 0, na = 0;
+  int *achadas = g_new(int, g_n_salas);
   GPtrArray *ocupadas = g_ptr_array_new(); /* nomes (não são nossos) */
   GPtrArray *fora_cap = g_ptr_array_new_with_free_func(g_free);
   GPtrArray *fora_rec = g_ptr_array_new_with_free_func(g_free);
 
   for (int s = 0; s < g_n_salas; s++) {
-    const SalaTeste *sl = &g_salas[s];
+    const SalaVista *sl = &g_salas[s];
     if (f.pessoas > sl->lugares) {
       g_ptr_array_add(fora_cap, g_strdup_printf("%s tem %d lugares", sl->nome,
                                                 sl->lugares));
@@ -279,7 +279,16 @@ static void buscar(TelaBusca *t) {
       continue;
     }
     n_rec++;
-    if (dados_conflito(sl->nome, f.dia, f.ini, f.fim, 0) >= 0) {
+    int conflito = dados_conflito(sl->nome, f.dia, f.ini, f.fim, 0);
+    if (conflito < 0) {
+      aviso(t, "Não foi possível consultar os conflitos das reservas.");
+      g_ptr_array_free(ocupadas, TRUE);
+      g_ptr_array_free(fora_cap, TRUE);
+      g_ptr_array_free(fora_rec, TRUE);
+      g_free(achadas);
+      return;
+    }
+    if (conflito) {
       g_ptr_array_add(ocupadas, (gpointer)sl->nome);
       continue;
     }
@@ -361,6 +370,7 @@ static void buscar(TelaBusca *t) {
   g_ptr_array_free(fora_cap, TRUE);
   g_ptr_array_free(fora_rec, TRUE);
   g_ptr_array_free(ocupadas, TRUE);
+  g_free(achadas);
 }
 
 static void ao_buscar(GtkButton *b, gpointer dados) {
@@ -400,7 +410,7 @@ GtkWidget *tela_busca_criar(Estado *e) {
   gtk_box_append(GTK_BOX(pagina), topo);
 
   /* formulário */
-  t->data = seletor_data_criar(DATA_PADRAO, ao_data, t);
+  t->data = seletor_data_criar(dados_data_hoje(), ao_data, t);
   t->h_ini = lista_horarios((14 * 60 - PRIMEIRA_HORA) / PASSO);
   t->h_fim = lista_horarios((16 * 60 - PRIMEIRA_HORA) / PASSO);
   t->pessoas = spin(1, 1000, 30);
@@ -439,12 +449,17 @@ GtkWidget *tela_busca_criar(Estado *e) {
 
   /* resultados */
   t->resultados = gtk_box_new(GTK_ORIENTATION_VERTICAL, 10);
-  gtk_box_append(GTK_BOX(pagina), t->resultados);
-
-  GtkWidget *rolagem = gtk_scrolled_window_new();
-  gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(rolagem), GTK_POLICY_NEVER,
-                                 GTK_POLICY_AUTOMATIC);
-  gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(rolagem), pagina);
-  g_signal_connect(rolagem, "map", G_CALLBACK(ao_mostrar), t);
-  return rolagem;
+  t->rolagem_resultados = gtk_scrolled_window_new();
+  gtk_scrolled_window_set_policy(
+      GTK_SCROLLED_WINDOW(t->rolagem_resultados), GTK_POLICY_NEVER,
+      GTK_POLICY_AUTOMATIC);
+  gtk_scrolled_window_set_min_content_height(
+      GTK_SCROLLED_WINDOW(t->rolagem_resultados), 180);
+  gtk_widget_set_vexpand(t->rolagem_resultados, TRUE);
+  gtk_scrolled_window_set_child(
+      GTK_SCROLLED_WINDOW(t->rolagem_resultados), t->resultados);
+  gtk_box_append(GTK_BOX(pagina), t->rolagem_resultados);
+  gtk_widget_set_vexpand(pagina, TRUE);
+  g_signal_connect(pagina, "map", G_CALLBACK(ao_mostrar), t);
+  return pagina;
 }

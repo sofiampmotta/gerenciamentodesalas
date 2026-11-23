@@ -1,6 +1,8 @@
 #include "../include/aplicacao.h"
+#include "../include/alocacao.h"
 #include "../include/persistencia.h"
 
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -12,6 +14,12 @@ static void definirCaminho(char destino[512], const char *caminho,
 
 static Aplicacao aplicacaoPadrao;
 static int aplicacaoPadraoIniciada = 0;
+
+static void normalizar_recorrencia(Reserva *reserva) {
+  if (reserva->isRecorrente && reserva->dataFim.dia == 0 &&
+      reserva->dataFim.mes == 0 && reserva->dataFim.ano == 0)
+    reserva->dataFim = (Data){31, 12, reserva->data.ano};
+}
 
 int aplicacao_iniciar(Aplicacao *app, const char *caminhoSalas,
                       const char *caminhoReservas) {
@@ -106,24 +114,64 @@ Reserva *aplicacao_buscar_reserva(Aplicacao *app, int id) {
   return NULL;
 }
 
-int aplicacao_salvar_sala(Aplicacao *app, Sala sala) {
-  if (app == NULL || sala.id <= 0 || sala.nome[0] == '\0' ||
-      sala.capacidade < 0)
-    return 0;
-  if (aplicacao_buscar_sala(app, sala.id) != NULL)
+int aplicacao_buscar_conflito_reserva(const Aplicacao *app,
+                                      const Reserva *proposta, int ignorarId,
+                                      Reserva *conflitante) {
+  if (app == NULL || proposta == NULL)
+    return -1;
+
+  Reserva normalizada = *proposta;
+  normalizar_recorrencia(&normalizada);
+  for (size_t i = 0; i < app->quantidadeReservas; i++) {
+    const Reserva *existente = &app->reservas[i];
+    if (existente->id == ignorarId)
+      continue;
+    if (reservasConflitam(normalizada, *existente)) {
+      if (conflitante != NULL)
+        *conflitante = *existente;
+      return 1;
+    }
+  }
+  return 0;
+}
+
+int aplicacao_salvar_sala(Aplicacao *app, Sala *dados) {
+  if (app == NULL || dados == NULL || dados->id < 0 ||
+      dados->nome[0] == '\0' || dados->capacidade < 0)
     return 0;
 
-  Sala *novas = realloc(app->salas, (app->quantidadeSalas + 1) * sizeof *novas);
+  if (app->quantidadeSalas >= (size_t)-1 / sizeof *app->salas)
+    return 0;
+  Sala sala = *dados;
+  if (sala.id == 0) {
+    int maiorId = 0;
+    for (size_t i = 0; i < app->quantidadeSalas; i++)
+      if (app->salas[i].id > maiorId)
+        maiorId = app->salas[i].id;
+    if (maiorId == INT_MAX)
+      return 0;
+    sala.id = maiorId + 1;
+  } else if (aplicacao_buscar_sala(app, sala.id) != NULL) {
+    return 0;
+  }
+
+  Sala *novas = malloc((app->quantidadeSalas + 1) * sizeof *novas);
   if (novas == NULL)
     return 0;
-  app->salas = novas;
-  app->salas[app->quantidadeSalas] = sala;
+  if (app->quantidadeSalas > 0)
+    memcpy(novas, app->salas, app->quantidadeSalas * sizeof *novas);
+  novas[app->quantidadeSalas] = sala;
 
-  if (pers_salvar_salas(app->caminhoSalas, app->salas,
-                        app->quantidadeSalas + 1) != PERS_OK)
+  if (pers_salvar_salas(app->caminhoSalas, novas,
+                        app->quantidadeSalas + 1) != PERS_OK) {
+    pers_liberar(novas);
     return 0;
+  }
 
+  pers_liberar(app->salas);
+  app->salas = novas;
   app->quantidadeSalas++;
+  *dados = sala;
   return 1;
 }
 
@@ -170,31 +218,68 @@ int aplicacao_excluir_sala(Aplicacao *app, int id) {
 }
 
 int aplicacao_salvar_reserva(Aplicacao *app, Reserva reserva) {
-  if (app == NULL)
+  return aplicacao_salvar_reservas(app, &reserva, 1);
+}
+
+int aplicacao_salvar_reservas(Aplicacao *app, Reserva reservas[],
+                              size_t quantidade) {
+  if (app == NULL || reservas == NULL || quantidade == 0)
     return 0;
-  if (reserva.id <= 0) {
-    int maior = 0;
-    for (size_t i = 0; i < app->quantidadeReservas; i++) {
-      if (app->reservas[i].id > maior)
-        maior = app->reservas[i].id;
+
+  size_t maximo = (size_t)-1 / sizeof *app->reservas;
+  if (app->quantidadeReservas > maximo ||
+      quantidade > maximo - app->quantidadeReservas)
+    return 0;
+
+  size_t total = app->quantidadeReservas + quantidade;
+  Reserva *novas = malloc(total * sizeof *novas);
+  if (novas == NULL)
+    return 0;
+  if (app->quantidadeReservas > 0)
+    memcpy(novas, app->reservas,
+           app->quantidadeReservas * sizeof *novas);
+
+  int maior = 0;
+  for (size_t i = 0; i < app->quantidadeReservas; i++)
+    if (app->reservas[i].id > maior)
+      maior = app->reservas[i].id;
+
+  for (size_t i = 0; i < quantidade; i++) {
+    Reserva nova = reservas[i];
+    normalizar_recorrencia(&nova);
+    if (nova.id <= 0) {
+      if (maior == INT_MAX) {
+        pers_liberar(novas);
+        return 0;
+      }
+      nova.id = ++maior;
+    } else {
+      if (aplicacao_buscar_reserva(app, nova.id) != NULL) {
+        pers_liberar(novas);
+        return 0;
+      }
+      for (size_t anterior = 0; anterior < i; anterior++) {
+        if (novas[app->quantidadeReservas + anterior].id == nova.id) {
+          pers_liberar(novas);
+          return 0;
+        }
+      }
+      if (nova.id > maior)
+        maior = nova.id;
     }
-    reserva.id = maior + 1;
-  } else if (aplicacao_buscar_reserva(app, reserva.id) != NULL) {
+    novas[app->quantidadeReservas + i] = nova;
+  }
+
+  if (pers_salvar_reservas(app->caminhoReservas, novas, total) != PERS_OK) {
+    pers_liberar(novas);
     return 0;
   }
 
-  Reserva *novas =
-      realloc(app->reservas, (app->quantidadeReservas + 1) * sizeof *novas);
-  if (novas == NULL)
-    return 0;
+  for (size_t i = 0; i < quantidade; i++)
+    reservas[i] = novas[app->quantidadeReservas + i];
+  pers_liberar(app->reservas);
   app->reservas = novas;
-  app->reservas[app->quantidadeReservas] = reserva;
-
-  if (pers_salvar_reservas(app->caminhoReservas, app->reservas,
-                           app->quantidadeReservas + 1) != PERS_OK)
-    return 0;
-
-  app->quantidadeReservas++;
+  app->quantidadeReservas = total;
   return 1;
 }
 
@@ -206,6 +291,7 @@ int aplicacao_editar_reserva(Aplicacao *app, int id, Reserva dadosNovos) {
     return 0;
 
   Reserva antiga = *reserva;
+  normalizar_recorrencia(&dadosNovos);
   dadosNovos.id = id;
   *reserva = dadosNovos;
   if (pers_salvar_reservas(app->caminhoReservas, app->reservas,

@@ -33,9 +33,9 @@ clean:
 # Rodam dentro de build/ para nao sujar a raiz do projeto.
 TEST_BIN = build/test_persistencia
 
-$(TEST_BIN): src/persistencia.c tests/test_persistencia.c include/persistencia.h include/salas.h
+$(TEST_BIN): src/persistencia.c src/alocacao.c src/aplicacao.c tests/test_persistencia.c include/persistencia.h include/salas.h include/alocacao.h include/aplicacao.h
 	@mkdir -p build
-	$(CC) -std=c99 -Wall -Wextra -Iinclude src/persistencia.c tests/test_persistencia.c -o $@
+	$(CC) -std=c99 -Wall -Wextra -Iinclude src/persistencia.c src/alocacao.c src/aplicacao.c tests/test_persistencia.c -o $@
 
 test: $(TEST_BIN)
 	cd build && ./test_persistencia

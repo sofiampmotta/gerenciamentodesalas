@@ -17,9 +17,19 @@ int main(void) {
 
   a.idSala = 3;
   a.isRecorrente = true;
+  a.data = (Data){10, 11, 2026};
+  a.dataFim = (Data){31, 12, 2026};
   a.horario.dia = TER;
   a.horario.comeco = 14 * 60;
   a.horario.fim = 16 * 60;
+
+  if (reservaOcorreEm(a, (Data){24, 11, 2026}) &&
+      !reservaOcorreEm(a, (Data){11, 11, 2026}) &&
+      !reservaOcorreEm(a, (Data){5, 1, 2027})) {
+    printf("[PASSOU] Ocorrencia semanal respeita inicio e fim\n");
+  } else {
+    printf("[FALHOU] Ocorrencia semanal respeita inicio e fim\n");
+  }
 
   b.idSala = 3;
   b.isRecorrente = false;
@@ -37,10 +47,12 @@ int main(void) {
   testarConflito("Recorrente + pontual: dias diferentes", a, b, false);
 
   b.isRecorrente = true;
+  b.data = (Data){17, 11, 2026};
+  b.dataFim = (Data){31, 12, 2026};
   testarConflito("Recorrente + recorrente: dias iguais", a, b, true);
 
   a.isRecorrente = false;
-  a.data.dia = 10;
+  a.data.dia = 24;
   a.data.mes = 11;
   a.data.ano = 2026;
   testarConflito("Recorrente + pontual: dias iguais", a, b, true);
@@ -92,18 +104,24 @@ int main(void) {
 
   existentes[0].idSala = 1;
   existentes[0].isRecorrente = true;
+  existentes[0].data = (Data){16, 11, 2026};
+  existentes[0].dataFim = (Data){31, 12, 2026};
   existentes[0].horario.dia = SEG;
   existentes[0].horario.comeco = 8 * 60;
   existentes[0].horario.fim = 10 * 60;
 
   existentes[1].idSala = 3;
   existentes[1].isRecorrente = true;
+  existentes[1].data = (Data){17, 11, 2026};
+  existentes[1].dataFim = (Data){31, 12, 2026};
   existentes[1].horario.dia = TER;
   existentes[1].horario.comeco = 14 * 60;
   existentes[1].horario.fim = 16 * 60;
 
   existentes[2].idSala = 3;
   existentes[2].isRecorrente = true;
+  existentes[2].data = (Data){18, 11, 2026};
+  existentes[2].dataFim = (Data){31, 12, 2026};
   existentes[2].horario.dia = QUA;
   existentes[2].horario.comeco = 10 * 60;
   existentes[2].horario.fim = 12 * 60;
@@ -112,6 +130,8 @@ int main(void) {
 
   nova.idSala = 3;
   nova.isRecorrente = true;
+  nova.data = (Data){17, 11, 2026};
+  nova.dataFim = (Data){31, 12, 2026};
   nova.horario.dia = TER;
   nova.horario.comeco = 15 * 60;
   nova.horario.fim = 17 * 60;
@@ -133,6 +153,28 @@ int main(void) {
     printf("[PASSOU] Vetor vazio\n");
   } else {
     printf("[FALHOU] Vetor vazio\n");
+  }
+
+  nova.horario.dia = TER;
+  Reserva serieAntiga = nova;
+  Reserva serieNova = nova;
+  serieAntiga.data = (Data){10, 11, 2026};
+  serieAntiga.dataFim = (Data){30, 11, 2026};
+  serieNova.data = (Data){1, 12, 2026};
+  serieNova.dataFim = (Data){31, 12, 2026};
+  if (!reservasConflitam(serieAntiga, serieNova)) {
+    printf("[PASSOU] Series em periodos sem intersecao\n");
+  } else {
+    printf("[FALHOU] Series em periodos sem intersecao\n");
+  }
+
+  Reserva foraDoPeriodo = b;
+  foraDoPeriodo.isRecorrente = false;
+  foraDoPeriodo.data = (Data){5, 1, 2027};
+  if (!reservasConflitam(serieNova, foraDoPeriodo)) {
+    printf("[PASSOU] Pontual fora do periodo recorrente\n");
+  } else {
+    printf("[FALHOU] Pontual fora do periodo recorrente\n");
   }
 
   return 0;

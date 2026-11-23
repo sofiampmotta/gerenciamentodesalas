@@ -11,7 +11,8 @@
 #define _POSIX_C_SOURCE 200809L
 #endif
 
-#include "persistencia.h"
+#include "../include/persistencia.h"
+#include "../include/alocacao.h"
 
 #include <ctype.h>
 #include <errno.h>
@@ -27,16 +28,20 @@
 #include <unistd.h>
 #endif
 
-#define CAB_SALAS "#POLI-SALAS;SALAS;v1"
-#define CAB_RESERVAS "#POLI-SALAS;RESERVAS;v2"
+#define CAB_SALAS "#POLI-SALAS;SALAS;v2"
+#define CAB_SALAS_LEGADO "#POLI-SALAS;SALAS;v1"
+#define CAB_RESERVAS "#POLI-SALAS;RESERVAS;v3"
+#define CAB_RESERVAS_LEGADO "#POLI-SALAS;RESERVAS;v2"
 #define SEPARADOR ';'
 #define LINHA_MAX 1024
-// id;nome;capacidade;acessivel;projetor;televisao;computadores
-#define CAMPOS_SALA 7
-// id;id_sala;atividade;recorrente;data;dia;inicio;fim;descricao;responsavel
-#define CAMPOS_RESERVA 10
+// id;nome;capacidade;acessivel;projetor;televisao;computadores;local
+#define CAMPOS_SALA 8
+// id;id_sala;atividade;recorrente;data_inicio;fim_recorrencia;dia;inicio;fim;descricao;responsavel
+#define CAMPOS_RESERVA 11
+#define CAMPOS_RESERVA_V2 10
 #define CAMPOS_MAX 16
 #define MINUTOS_MAX 1439 // 23:59
+#define DATA_REFERENCIA_LEGADA 20261113
 
 // Nomes usados no arquivo para os enums (a posicao e o valor do enum)
 static const char *const NOMES_ATIVIDADE[] = {"AULA", "MONITORIA", "EXTENSAO",
@@ -79,6 +84,24 @@ static int data_valida(const Data *d) {
   return d->dia <= dias[d->mes - 1] + (d->mes == 2 && eh_bissexto(d->ano));
 }
 
+static Data adicionar_dia(Data data) {
+  static const int dias[] = {31, 28, 31, 30, 31, 30,
+                             31, 31, 30, 31, 30, 31};
+  data.dia++;
+  int limite = dias[data.mes - 1];
+  if (data.mes == 2 && eh_bissexto(data.ano))
+    limite++;
+  if (data.dia > limite) {
+    data.dia = 1;
+    data.mes++;
+    if (data.mes > 12) {
+      data.mes = 1;
+      data.ano++;
+    }
+  }
+  return data;
+}
+
 // Confere se o valor do bool e 0 ou 1
 static int bool_valido(bool b) {
   unsigned char byte;
@@ -99,7 +122,7 @@ static int sala_valida(const Sala *s) {
   return s->id > 0 && texto_valido(s->nome, sizeof s->nome, 0) &&
          s->capacidade >= 0 && bool_valido(s->isAcessivel) &&
          bool_valido(s->hasProjetor) && bool_valido(s->hasTelevisao) &&
-         s->computador >= 0;
+         s->computador >= 0 && texto_valido(s->local, sizeof s->local, 1);
 }
 
 static int reserva_valida(const Reserva *r) {
@@ -110,11 +133,14 @@ static int reserva_valida(const Reserva *r) {
   if (!bool_valido(r->isRecorrente))
     return 0;
 
-  // Reserva unica precisa de data valida. Na recorrente a data e opcional.
+  // Recorrencias valem ate o fim do ano em que comecam.
   if (r->isRecorrente) {
-    if (!data_vazia(&r->data) && !data_valida(&r->data))
+    if (!data_valida(&r->data) || !data_valida(&r->dataFim) ||
+        r->dataFim.dia != 31 || r->dataFim.mes != 12 ||
+        r->dataFim.ano != r->data.ano ||
+        diaDaSemana(r->data) != r->horario.dia)
       return 0;
-  } else if (!data_valida(&r->data)) {
+  } else if (!data_valida(&r->data) || !data_vazia(&r->dataFim)) {
     return 0;
   }
 
@@ -267,7 +293,7 @@ static int ler_hora(const char *s, int *minutos) {
 
 static int ler_sala(char **c, int n, void *destino) {
   Sala *s = destino;
-  if (n != CAMPOS_SALA)
+  if (n != CAMPOS_SALA && n != CAMPOS_SALA - 1)
     return 0;
   memset(s, 0, sizeof *s);
   if (!ler_inteiro(c[0], 1, INT_MAX, &s->id))
@@ -284,15 +310,28 @@ static int ler_sala(char **c, int n, void *destino) {
     return 0;
   if (!ler_inteiro(c[6], 0, INT_MAX, &s->computador))
     return 0;
+  if (n == CAMPOS_SALA &&
+      !copiar_texto(s->local, sizeof s->local, c[7]))
+    return 0;
   return sala_valida(s);
+}
+
+static Data proxima_data_recorrente(Data data, Dia dia) {
+  for (int i = 0; i < 7 && diaDaSemana(data) != dia; i++) {
+    if (data.ano == 9999 && data.mes == 12 && data.dia == 31)
+      return (Data){0};
+    data = adicionar_dia(data);
+  }
+  return data;
 }
 
 static int ler_reserva(char **c, int n, void *destino) {
   Reserva *r = destino;
-  int atividade, dia;
-  if (n != CAMPOS_RESERVA)
+  int atividade, dia, deslocamento;
+  if (n != CAMPOS_RESERVA && n != CAMPOS_RESERVA_V2)
     return 0;
   memset(r, 0, sizeof *r);
+  deslocamento = n == CAMPOS_RESERVA ? 1 : 0;
   if (!ler_inteiro(c[0], 1, INT_MAX, &r->id))
     return 0;
   if (!ler_inteiro(c[1], 1, INT_MAX, &r->idSala))
@@ -305,18 +344,32 @@ static int ler_reserva(char **c, int n, void *destino) {
     return 0;
   if (!ler_data(c[4], &r->data))
     return 0;
-  dia = ler_nome(c[5], NOMES_DIA, QTD_DIAS);
+  if (deslocamento && !ler_data(c[5], &r->dataFim))
+    return 0;
+  dia = ler_nome(c[5 + deslocamento], NOMES_DIA, QTD_DIAS);
   if (dia < 0)
     return 0;
   r->horario.dia = (Dia)dia;
-  if (!ler_hora(c[6], &r->horario.comeco))
+  if (!ler_hora(c[6 + deslocamento], &r->horario.comeco))
     return 0;
-  if (!ler_hora(c[7], &r->horario.fim))
+  if (!ler_hora(c[7 + deslocamento], &r->horario.fim))
     return 0;
-  if (!copiar_texto(r->descricao, sizeof r->descricao, c[8]))
+  if (!copiar_texto(r->descricao, sizeof r->descricao, c[8 + deslocamento]))
     return 0;
-  if (!copiar_texto(r->responsavel, sizeof r->responsavel, c[9]))
+  if (!copiar_texto(r->responsavel, sizeof r->responsavel,
+                    c[9 + deslocamento]))
     return 0;
+
+  if (!deslocamento && r->isRecorrente) {
+    if (data_vazia(&r->data)) {
+      r->data.dia = DATA_REFERENCIA_LEGADA % 100;
+      r->data.mes = (DATA_REFERENCIA_LEGADA / 100) % 100;
+      r->data.ano = DATA_REFERENCIA_LEGADA / 10000;
+    } else if (!data_valida(&r->data))
+      return 0;
+    r->data = proxima_data_recorrente(r->data, r->horario.dia);
+    r->dataFim = (Data){31, 12, r->data.ano};
+  }
   return reserva_valida(r);
 }
 
@@ -344,9 +397,9 @@ static void marcar_invalida(PersRelatorio *rel, size_t num_linha) {
 }
 
 static PersStatus carregar(const char *caminho, const char *cabecalho,
-                           size_t tam, LerRegistroFn ler, DuplicadoFn dup,
-                           void **saida, size_t *n_saida,
-                           PersRelatorio *rel_usuario) {
+                           const char *cabecalhoLegado, size_t tam,
+                           LerRegistroFn ler, DuplicadoFn dup, void **saida,
+                           size_t *n_saida, PersRelatorio *rel_usuario) {
   PersRelatorio rel_local;
   PersRelatorio *rel = rel_usuario ? rel_usuario : &rel_local;
   FILE *f;
@@ -398,7 +451,9 @@ static PersStatus carregar(const char *caminho, const char *cabecalho,
     if (!achou_cabecalho) {
       if (r == 1 && p[0] == '\0')
         continue; // linha em branco
-      if (r != 1 || strcmp(p, cabecalho) != 0) {
+      if (r != 1 || (strcmp(p, cabecalho) != 0 &&
+                     (cabecalhoLegado == NULL ||
+                      strcmp(p, cabecalhoLegado) != 0))) {
         status = PERS_ERRO_FORMATO;
         break;
       }
@@ -453,23 +508,27 @@ typedef int (*EscreverFn)(FILE *f, const void *registro);
 
 static int escrever_sala(FILE *f, const void *r) {
   const Sala *s = r;
-  return fprintf(f, "%d;%s;%d;%d;%d;%d;%d\n", s->id, s->nome, s->capacidade,
-                 s->isAcessivel ? 1 : 0, s->hasProjetor ? 1 : 0,
-                 s->hasTelevisao ? 1 : 0, s->computador);
+  return fprintf(f, "%d;%s;%d;%d;%d;%d;%d;%s\n", s->id, s->nome,
+                 s->capacidade, s->isAcessivel ? 1 : 0,
+                 s->hasProjetor ? 1 : 0, s->hasTelevisao ? 1 : 0,
+                 s->computador, s->local);
 }
 
 static int escrever_reserva(FILE *f, const void *x) {
   const Reserva *r = x;
-  char data[16] = "";
+  char data[16] = "", dataFim[16] = "";
   if (!data_vazia(&r->data))
     snprintf(data, sizeof data, "%04d-%02d-%02d", r->data.ano, r->data.mes,
              r->data.dia);
-  return fprintf(f, "%d;%d;%s;%d;%s;%s;%02d:%02d;%02d:%02d;%s;%s\n", r->id,
-                 r->idSala, NOMES_ATIVIDADE[r->atividade],
-                 r->isRecorrente ? 1 : 0, data, NOMES_DIA[r->horario.dia],
-                 r->horario.comeco / 60, r->horario.comeco % 60,
-                 r->horario.fim / 60, r->horario.fim % 60, r->descricao,
-                 r->responsavel);
+  if (!data_vazia(&r->dataFim))
+    snprintf(dataFim, sizeof dataFim, "%04d-%02d-%02d", r->dataFim.ano,
+             r->dataFim.mes, r->dataFim.dia);
+  return fprintf(f, "%d;%d;%s;%d;%s;%s;%s;%02d:%02d;%02d:%02d;%s;%s\n",
+                 r->id, r->idSala, NOMES_ATIVIDADE[r->atividade],
+                 r->isRecorrente ? 1 : 0, data, dataFim,
+                 NOMES_DIA[r->horario.dia], r->horario.comeco / 60,
+                 r->horario.comeco % 60, r->horario.fim / 60,
+                 r->horario.fim % 60, r->descricao, r->responsavel);
 }
 
 // Obriga os dados a irem para o disco agora
@@ -600,8 +659,8 @@ PersStatus pers_salvar_salas(const char *caminho, const Sala *v, size_t n) {
 
 PersStatus pers_carregar_salas(const char *caminho, Sala **v, size_t *n,
                                PersRelatorio *rel) {
-  return carregar(caminho, CAB_SALAS, sizeof(Sala), ler_sala, salas_duplicadas,
-                  (void **)v, n, rel);
+  return carregar(caminho, CAB_SALAS, CAB_SALAS_LEGADO, sizeof(Sala),
+                  ler_sala, salas_duplicadas, (void **)v, n, rel);
 }
 
 PersStatus pers_salvar_reservas(const char *caminho, const Reserva *v,
@@ -615,8 +674,8 @@ PersStatus pers_salvar_reservas(const char *caminho, const Reserva *v,
 
 PersStatus pers_carregar_reservas(const char *caminho, Reserva **v, size_t *n,
                                   PersRelatorio *rel) {
-  return carregar(caminho, CAB_RESERVAS, sizeof(Reserva), ler_reserva,
-                  reservas_duplicadas, (void **)v, n, rel);
+  return carregar(caminho, CAB_RESERVAS, CAB_RESERVAS_LEGADO, sizeof(Reserva),
+                  ler_reserva, reservas_duplicadas, (void **)v, n, rel);
 }
 
 void pers_liberar(void *vetor) { free(vetor); }

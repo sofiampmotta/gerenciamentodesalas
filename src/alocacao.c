@@ -3,9 +3,7 @@
 #include <string.h>
 #include <time.h>
 
-Dia diaDaSemana(Data data) // essa função converte uma data (datas só são pra
-                           // pontuais), em um dia da semana (SEG,TER) pra
-                           // comparar algo pontual com fixo na mesma lógica
+Dia diaDaSemana(Data data) // converte uma data de calendario em dia semanal.
 {
   struct tm calendario = {0};
 
@@ -38,13 +36,32 @@ bool horariosConflitam(
   return intervalosConflitam(a, b);
 }
 
+bool reservaOcorreEm(Reserva reserva, Data data) {
+  if (!reserva.isRecorrente)
+    return datasIguais(reserva.data, data);
+
+  int dataConsulta = data.ano * 10000 + data.mes * 100 + data.dia;
+  int inicio = reserva.data.ano * 10000 + reserva.data.mes * 100 +
+               reserva.data.dia;
+  int fim = reserva.dataFim.ano * 10000 + reserva.dataFim.mes * 100 +
+            reserva.dataFim.dia;
+  return dataConsulta >= inicio && dataConsulta <= fim &&
+         diaDaSemana(data) == reserva.horario.dia;
+}
+
 bool reservasConflitam(Reserva a, Reserva b) {
   if (a.idSala != b.idSala) {
     return false; // as reservas nao entram em conflito, nao tem o msm id de
                   // Sala
   }
   if (a.isRecorrente && b.isRecorrente) {
-    return horariosConflitam(a.horario, b.horario);
+    int inicio = a.data.ano * 10000 + a.data.mes * 100 + a.data.dia;
+    int fim = a.dataFim.ano * 10000 + a.dataFim.mes * 100 + a.dataFim.dia;
+    int outroInicio = b.data.ano * 10000 + b.data.mes * 100 + b.data.dia;
+    int outroFim =
+        b.dataFim.ano * 10000 + b.dataFim.mes * 100 + b.dataFim.dia;
+    return a.horario.dia == b.horario.dia && inicio <= outroFim &&
+           outroInicio <= fim && horariosConflitam(a.horario, b.horario);
   }
   if (!a.isRecorrente && !b.isRecorrente) {
     return datasIguais(a.data, b.data) &&
@@ -53,11 +70,11 @@ bool reservasConflitam(Reserva a, Reserva b) {
   if (!a.isRecorrente && b.isRecorrente) // transforma a data de "a" em um dia
                                          // de semana e compara com o dia de "b"
   {
-    return diaDaSemana(a.data) == b.horario.dia &&
+    return reservaOcorreEm(b, a.data) &&
            intervalosConflitam(a.horario, b.horario);
   }
   if (a.isRecorrente && !b.isRecorrente) {
-    return diaDaSemana(b.data) == a.horario.dia &&
+    return reservaOcorreEm(a, b.data) &&
            intervalosConflitam(a.horario, b.horario);
   }
   return false;

@@ -24,7 +24,7 @@ int cadastrarSala(Sala nova) {
   Aplicacao *app = obterAplicacao();
   if (app == NULL)
     return 0;
-  if (!aplicacao_salvar_sala(app, nova)) {
+  if (!aplicacao_salvar_sala(app, &nova)) {
     printf("Erro: nao foi possivel cadastrar a sala.\n");
     return 0;
   }

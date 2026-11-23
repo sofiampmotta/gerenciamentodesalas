@@ -28,7 +28,7 @@ typedef enum atividade{
   OUTRO
 } Atividade;
 
-// Data de calendario, usada em reservas NAO recorrentes (eventos pontuais)
+// Data de calendario: inicio de uma serie recorrente ou evento pontual.
 typedef struct data {
   int dia;
   int mes;
@@ -44,11 +44,12 @@ typedef struct sala{
   bool hasProjetor;
   bool hasTelevisao;
   int computador;
+  char local[128];
 } Sala;
 
 // Uma reserva/alocacao de um ambiente.
-// Se isRecorrente == true: usar horario.dia (repete toda semana nesse dia), data e ignorada.
-// Se isRecorrente == false: usar data (evento pontual), horario.dia e ignorado.
+// Recorrente: data e dataFim delimitam a serie; horario.dia define o dia semanal.
+// Pontual: data define a ocorrencia e dataFim fica vazia.
 typedef struct reserva{
   int id;              // identificador unico da reserva (necessario p/ editar/excluir)
   int idSala;
@@ -58,6 +59,7 @@ typedef struct reserva{
   bool isRecorrente;
   Data data;
   Horario horario;
+  Data dataFim;
 } Reserva;
 
 #endif

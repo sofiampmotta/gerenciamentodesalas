@@ -8,6 +8,10 @@ typedef struct {
   GtkWidget *total;
 } TelaReservas;
 
+static const char *DIAS_SEMANA[] = {
+    "Segunda-feira", "Terça-feira", "Quarta-feira", "Quinta-feira",
+    "Sexta-feira",  "Sábado",       "Domingo"};
+
 static void ao_editar(GtkButton *b, gpointer dados);
 
 static void estilo_reservas(void) {
@@ -42,7 +46,7 @@ static GtkWidget *celula(const char *texto, int largura) {
 static GtkWidget *linha(const char *a, const char *b, const char *c,
                         const char *d, const char *f, const char *g) {
   GtkWidget *caixa = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
-  gtk_box_append(GTK_BOX(caixa), celula(a, 100));
+  gtk_box_append(GTK_BOX(caixa), celula(a, 140));
   gtk_box_append(GTK_BOX(caixa), celula(b, 120));
   gtk_box_append(GTK_BOX(caixa), celula(c, 230));
   gtk_box_append(GTK_BOX(caixa), celula(d, 100));
@@ -52,13 +56,26 @@ static GtkWidget *linha(const char *a, const char *b, const char *c,
 }
 
 static int comparar(const void *pa, const void *pb) {
-  const ReservaTeste *x = &g_reservas[*(const int *)pa];
-  const ReservaTeste *y = &g_reservas[*(const int *)pb];
+  const ReservaVista *x = &g_reservas[*(const int *)pa];
+  const ReservaVista *y = &g_reservas[*(const int *)pb];
   if (x->dia != y->dia)
     return x->dia - y->dia;
   if (x->ini != y->ini)
     return x->ini - y->ini;
   return strcmp(x->sala, y->sala);
+}
+
+static void periodo_reserva(const ReservaVista *r, char *buf, size_t tam) {
+  if (!r->isRecorrente || !dados_data_valida(r->dia)) {
+    dados_data_texto(r->dia, buf, tam);
+    return;
+  }
+
+  GDate *data =
+      g_date_new_dmy(r->dia % 100, (r->dia / 100) % 100, r->dia / 10000);
+  GDateWeekday dia = g_date_get_weekday(data);
+  g_snprintf(buf, tam, "%s", DIAS_SEMANA[dia - G_DATE_MONDAY]);
+  g_date_free(data);
 }
 
 static void recarregar(TelaReservas *t) {
@@ -67,15 +84,15 @@ static void recarregar(TelaReservas *t) {
          NULL)
     gtk_list_box_remove(GTK_LIST_BOX(t->lista), GTK_WIDGET(row));
 
-  int idx[MAX_RESERVAS];
+  int *idx = g_new(int, g_n_reservas);
   for (int i = 0; i < g_n_reservas; i++)
     idx[i] = i;
   qsort(idx, g_n_reservas, sizeof(int), comparar);
 
   for (int k = 0; k < g_n_reservas; k++) {
-    const ReservaTeste *r = &g_reservas[idx[k]];
-    char dia[16], a[8], b[8], hor[24];
-    dados_data_texto(r->dia, dia, sizeof dia);
+    const ReservaVista *r = &g_reservas[idx[k]];
+    char dia[32], a[8], b[8], hor[24];
+    periodo_reserva(r, dia, sizeof dia);
     dados_hora_texto(r->ini, a, sizeof a);
     dados_hora_texto(r->fim, b, sizeof b);
     g_snprintf(hor, sizeof hor, "%s às %s", a, b);
@@ -87,6 +104,7 @@ static void recarregar(TelaReservas *t) {
     gtk_list_box_row_set_child(GTK_LIST_BOX_ROW(item), caixa);
     gtk_list_box_append(GTK_LIST_BOX(t->lista), item);
   }
+  g_free(idx);
   char *txt = g_strdup_printf("%d reservas registradas", g_n_reservas);
   gtk_label_set_text(GTK_LABEL(t->total), txt);
   g_free(txt);
@@ -136,7 +154,7 @@ GtkWidget *tela_reservas_criar(Estado *e) {
   gtk_box_append(GTK_BOX(pagina), topo);
 
   GtkWidget *cab =
-      linha("Dia", "Horário", "Atividade", "Sala", "Tipo", "Responsável");
+      linha("Período", "Horário", "Atividade", "Sala", "Tipo", "Responsável");
   gtk_widget_add_css_class(cab, "cab-reservas");
   gtk_box_append(GTK_BOX(pagina), cab);
 

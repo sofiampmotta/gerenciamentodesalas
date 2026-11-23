@@ -18,13 +18,22 @@ int aplicacao_iniciar(Aplicacao *app,
                       const char *caminhoReservas);
 void aplicacao_finalizar(Aplicacao *app);
 
-int aplicacao_salvar_sala(Aplicacao *app, Sala sala);
+/* Aceita id 0 para sala nova e preenche o id gerado em caso de sucesso. */
+int aplicacao_salvar_sala(Aplicacao *app, Sala *sala);
 int aplicacao_editar_sala(Aplicacao *app, int id, Sala dadosNovos);
 int aplicacao_excluir_sala(Aplicacao *app, int id);
 
 int aplicacao_salvar_reserva(Aplicacao *app, Reserva reserva);
+/* A persistencia é aplicada atomicamente, e os ids são atribidos posteriormente em caso de sucesso */
+int aplicacao_salvar_reservas(Aplicacao *app, Reserva reservas[],
+                              size_t quantidade);
 int aplicacao_editar_reserva(Aplicacao *app, int id, Reserva dadosNovos);
 int aplicacao_excluir_reserva(Aplicacao *app, int id);
+/* Retorna 1 se houver conflito, 0 se estiver livre e -1 para argumentos
+ * invalidos. */
+int aplicacao_buscar_conflito_reserva(const Aplicacao *app,
+                                      const Reserva *proposta, int ignorarId,
+                                      Reserva *conflitante);
 
 Sala *aplicacao_buscar_sala(Aplicacao *app, int id);
 Reserva *aplicacao_buscar_reserva(Aplicacao *app, int id);

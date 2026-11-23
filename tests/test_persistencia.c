@@ -4,6 +4,8 @@
  */
 
 #include "persistencia.h"
+#include "alocacao.h"
+#include "aplicacao.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -77,6 +79,7 @@ static Sala sala(int id, const char *nome) {
   s.hasProjetor = true;
   s.hasTelevisao = false;
   s.computador = 0;
+  strcpy(s.local, "Bloco teste");
   return s;
 }
 
@@ -90,6 +93,11 @@ static Reserva aula(int id, int id_sala, Dia dia, int comeco, int fim) {
   strcpy(r.descricao, "DEB CÁLCULO 1 (TC)");
   strcpy(r.responsavel, "LENIN ALEXANDRE DE ALMEIDA BEZERRA");
   r.isRecorrente = true;
+  static const int datas[] = {20261116, 20261117, 20261118, 20261119,
+                              20261120, 20261114, 20261115};
+  int inicio = (unsigned)dia < 7 ? datas[dia] : 0;
+  r.data = (Data){inicio % 100, (inicio / 100) % 100, inicio / 10000};
+  r.dataFim = (Data){31, 12, 2026};
   r.horario.dia = dia;
   r.horario.comeco = comeco;
   r.horario.fim = fim;
@@ -102,6 +110,7 @@ static Reserva evento(int id, int id_sala, int dia, int mes, int ano, Dia dsem,
   Reserva r = aula(id, id_sala, dsem, comeco, fim);
   r.atividade = EVENTO;
   r.isRecorrente = false;
+  r.dataFim = (Data){0};
   r.data.dia = dia;
   r.data.mes = mes;
   r.data.ano = ano;
@@ -114,7 +123,8 @@ static int salas_iguais(const Sala *a, const Sala *b) {
   return a->id == b->id && strcmp(a->nome, b->nome) == 0 &&
          a->capacidade == b->capacidade && a->isAcessivel == b->isAcessivel &&
          a->hasProjetor == b->hasProjetor &&
-         a->hasTelevisao == b->hasTelevisao && a->computador == b->computador;
+         a->hasTelevisao == b->hasTelevisao && a->computador == b->computador &&
+         strcmp(a->local, b->local) == 0;
 }
 
 static int reservas_iguais(const Reserva *a, const Reserva *b) {
@@ -124,6 +134,9 @@ static int reservas_iguais(const Reserva *a, const Reserva *b) {
          strcmp(a->responsavel, b->responsavel) == 0 &&
          a->isRecorrente == b->isRecorrente && a->data.dia == b->data.dia &&
          a->data.mes == b->data.mes && a->data.ano == b->data.ano &&
+         a->dataFim.dia == b->dataFim.dia &&
+         a->dataFim.mes == b->dataFim.mes &&
+         a->dataFim.ano == b->dataFim.ano &&
          a->horario.dia == b->horario.dia &&
          a->horario.comeco == b->horario.comeco &&
          a->horario.fim == b->horario.fim;
@@ -171,7 +184,7 @@ static void test_reservas_ida_e_volta(void) {
   v[2] = evento(3, 1, 29, 2, 2028, TER, H(19, 0), H(22, 0)); /* ano bissexto */
   v[3] = aula(4, 3, DOM, H(0, 0), H(23, 59));                /* extremos     */
   v[3].atividade = MONITORIA;
-  v[3].data.dia = 3;
+  v[3].data.dia = 2;
   v[3].data.mes = 8;
   v[3].data.ano = 2026; /* recorrente c/ data de inicio */
 
@@ -295,7 +308,7 @@ static void test_linhas_invalidas_salas(void) {
       "7;i-03;40;1;1;0;0\n"   /* 8: nome repetido (caixa)    */
       "8;;40;1;1;0;0\n"       /* 9: nome vazio               */
       "9;NOME-COM-MAIS-DE-19-BYTES;40;1;1;0;0\n" /* 10: nome grande demais    */
-      "10;I-12;40;1;1;0;0;extra\n" /* 11: campo a mais            */
+      "10;I-12;40;1;1;0;0;extra;extra\n" /* 11: campo a mais        */
       "%s"                         /* 12: linha gigante           */
       "# comentario ignorado\n"
       "\n"
@@ -365,18 +378,84 @@ static void test_linhas_invalidas_reservas(void) {
       /* ok (sabado) */
       "20;3;MONITORIA;1;;SAB;08:50;12:10;Monitoria de Cálculo;Laura\n"
       /* ok (com data) */
-      "21;2;EVENTO;0;2026-12-01;TER;14:00;15:40;Defesa de TCC;Coord.\n");
+      "21;2;EVENTO;0;2026-12-01;TER;14:00;15:40;Defesa de TCC;Coord.\n"
+      /* data recorrente impossivel */
+      "22;2;AULA;1;2026-99-99;SEG;07:10;08:50;Aula;Prof. A\n");
 
   CHECK(pers_carregar_reservas(ARQ_RES, &r, &n, &rel) == PERS_OK);
   CHECK(n == 3);
-  CHECK(rel.linhas_invalidas == 19);
+  CHECK(rel.linhas_invalidas == 20);
   CHECK(r != NULL && r[0].idSala == 1 && r[1].idSala == 3 && r[2].idSala == 2);
   CHECK(r != NULL && r[0].id == 1 && r[1].id == 20 && r[2].id == 21);
   CHECK(r != NULL && r[1].horario.dia == SAB && r[1].atividade == MONITORIA);
+  CHECK(r != NULL && r[0].data.dia == 16 && r[0].data.mes == 11 &&
+        r[0].data.ano == 2026 && r[0].dataFim.dia == 31 &&
+        r[0].dataFim.mes == 12 && r[0].dataFim.ano == 2026);
   CHECK(r != NULL && !r[2].isRecorrente && r[2].data.dia == 1 &&
         r[2].data.mes == 12 && r[2].data.ano == 2026 &&
         r[2].horario.comeco == H(14, 0));
   pers_liberar(r);
+  limpar(ARQ_RES);
+}
+
+static void test_recorrencia_v3(void) {
+  Reserva *r = NULL;
+  size_t n = 0;
+  PersRelatorio rel;
+
+  escrever_texto(ARQ_RES,
+                 "#POLI-SALAS;RESERVAS;v3\n"
+                 "1;1;AULA;1;2026-11-16;2027-01-01;SEG;07:10;08:50;"
+                 "QUÍMICA (EM);Prof. A\n"
+                 "2;1;AULA;1;2026-11-16;2026-12-31;SEG;07:10;08:50;"
+                 "QUÍMICA (EM);Prof. A\n"
+                 "3;1;AULA;1;2026-11-17;2026-12-31;SEG;07:10;08:50;"
+                 "QUÍMICA (EM);Prof. A\n");
+  CHECK(pers_carregar_reservas(ARQ_RES, &r, &n, &rel) == PERS_OK);
+  CHECK(n == 1 && rel.linhas_invalidas == 2);
+  CHECK(r != NULL && r[0].id == 2 && r[0].data.dia == 16 &&
+        r[0].dataFim.dia == 31);
+  pers_liberar(r);
+  limpar(ARQ_RES);
+}
+
+static void test_servico_aplicacao(void) {
+  Aplicacao app;
+  Sala novaSala = sala(0, "Sala serviço");
+  Reserva semanal = aula(0, 0, SEG, H(14, 0), H(16, 0));
+  Reserva pontual = {0}, conflito;
+
+  limpar(ARQ_SAL);
+  limpar(ARQ_RES);
+  memset(&app, 0, sizeof app);
+  if (!aplicacao_iniciar(&app, ARQ_SAL, ARQ_RES)) {
+    CHECK(0);
+    return;
+  }
+  CHECK(1);
+  CHECK(aplicacao_salvar_sala(&app, &novaSala));
+  CHECK(novaSala.id == 1 && app.quantidadeSalas == 1);
+
+  semanal.idSala = novaSala.id;
+  CHECK(aplicacao_salvar_reserva(&app, semanal));
+  CHECK(app.quantidadeReservas == 1 &&
+        app.reservas[0].dataFim.dia == 31 &&
+        app.reservas[0].dataFim.mes == 12);
+
+  pontual.idSala = novaSala.id;
+  pontual.atividade = EVENTO;
+  pontual.data = (Data){7, 12, 2026};
+  pontual.horario.dia = SEG;
+  pontual.horario.comeco = H(15, 0);
+  pontual.horario.fim = H(16, 0);
+  CHECK(aplicacao_buscar_conflito_reserva(&app, &pontual, 0, &conflito) == 1);
+  CHECK(conflito.id == app.reservas[0].id);
+
+  pontual.data = (Data){4, 1, 2027};
+  CHECK(aplicacao_buscar_conflito_reserva(&app, &pontual, 0, NULL) == 0);
+
+  aplicacao_finalizar(&app);
+  limpar(ARQ_SAL);
   limpar(ARQ_RES);
 }
 
@@ -390,7 +469,7 @@ static void test_crlf_e_bom(void) {
                           "2;I-06;20;0;0;0;0");
   CHECK(pers_carregar_salas(ARQ_SAL, &s, &n, NULL) == PERS_OK);
   CHECK(n == 2 && s != NULL && strcmp(s[0].nome, "I-03") == 0 &&
-        s[1].capacidade == 20);
+        s[1].capacidade == 20 && s[0].local[0] == '\0');
   pers_liberar(s);
   limpar(ARQ_SAL);
 }
@@ -423,6 +502,10 @@ static void test_salvar_dado_invalido_nao_altera_arquivo(void) {
 
   v[1] = sala(2, "Outra");
   v[1].computador = -1; /* negativo */
+  CHECK(pers_salvar_salas(ARQ_SAL, v, 2) == PERS_ERRO_DADO_INVALIDO);
+
+  v[1] = sala(2, "Outra");
+  strcpy(v[1].local, "Bloco;5");
   CHECK(pers_salvar_salas(ARQ_SAL, v, 2) == PERS_ERRO_DADO_INVALIDO);
 
   CHECK(pers_carregar_salas(ARQ_SAL, &lidos, &n, NULL) == PERS_OK);
@@ -611,6 +694,8 @@ int main(void) {
   RODAR(test_cabecalho_invalido);
   RODAR(test_linhas_invalidas_salas);
   RODAR(test_linhas_invalidas_reservas);
+  RODAR(test_recorrencia_v3);
+  RODAR(test_servico_aplicacao);
   RODAR(test_crlf_e_bom);
   RODAR(test_salvar_dado_invalido_nao_altera_arquivo);
   RODAR(test_gravacao_segura_backup);

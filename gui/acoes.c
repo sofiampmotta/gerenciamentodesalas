@@ -1,8 +1,7 @@
 #include "interface.h"
 #include <stdarg.h>
 
-/* PROVISÓRIO: escreve no terminal o que a tela mandaria ao backend.
-   Na integração, cada chamada a acao_log vira a chamada da função real. */
+/* Registra interações da interface para depuração. */
 void acao_log(const char *fmt, ...) {
   va_list ap;
   va_start(ap, fmt);

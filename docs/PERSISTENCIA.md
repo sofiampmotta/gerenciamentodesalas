@@ -8,7 +8,7 @@ em `include/salas.h`, usando arquivos de texto locais. Resolve a issue #4.
 | `include/persistencia.h` | funções que os outros módulos chamam |
 | `src/persistencia.c` | implementação |
 | `tests/test_persistencia.c` | testes (`make test`) |
-| `dados_exemplo/` | 42 salas e 794 aulas reais de 2026.2 no formato abaixo |
+| `dados_exemplo/` | 42 salas e 794 aulas reais de 2026.2 em formato legado v2 |
 
 ## Como usar
 
@@ -50,7 +50,8 @@ ficar com ele (e usar `realloc` para crescer) ou copiar para outra estrutura.
 - Funciona igual em Windows e Linux. Com `fwrite` da struct, o arquivo depende
   do compilador (padding, tamanho de `bool` e de `int`).
 - Uma linha corrompida é ignorada, e o resto do arquivo continua sendo lido.
-- Se uma struct mudar, basta trocar a versão no cabeçalho (`v1` → `v2`).
+- Se uma struct mudar, troque a versão no cabeçalho e mantenha leitura
+  compatível com versões anteriores quando os dados puderem ser migrados.
 
 ## Formato
 
@@ -66,10 +67,10 @@ Regras gerais:
 ### `salas.txt`
 
 ```
-#POLI-SALAS;SALAS;v1
-id;nome;capacidade;acessivel;projetor;televisao;computadores
-1;A-03;45;1;1;0;0
-36;LIP-03;30;0;1;1;25
+#POLI-SALAS;SALAS;v2
+id;nome;capacidade;acessivel;projetor;televisao;computadores;local
+1;A-03;45;1;1;0;0;Bloco A
+36;LIP-03;30;0;1;1;25;Laboratório
 ```
 
 | Campo | Regra |
@@ -78,14 +79,18 @@ id;nome;capacidade;acessivel;projetor;televisao;computadores
 | `nome` | obrigatório, único (sem diferenciar maiúsc./minúsc.), até 19 bytes |
 | `capacidade`, `computadores` | inteiro ≥ 0 |
 | `acessivel`, `projetor`, `televisao` | `0` ou `1` |
+| `local` | opcional, até 127 bytes |
+
+Arquivos `salas.txt` `v1` continuam sendo lidos; o campo `local` começa vazio.
+Ao salvar, o arquivo é gravado no formato `v2`.
 
 ### `reservas.txt`
 
 ```
-#POLI-SALAS;RESERVAS;v2
-id;id_sala;atividade;recorrente;data;dia;inicio;fim;descricao;responsavel
-1;1;AULA;1;;SEG;07:10;08:50;DEC METODOLOGIA DA PESQUISA (AM);MICAELLA RAISSA FALCÃO DE MOURA
-795;12;EVENTO;0;2026-12-01;TER;14:00;15:40;Defesa de TCC;Coordenação
+#POLI-SALAS;RESERVAS;v3
+id;id_sala;atividade;recorrente;data_inicio;fim_recorrencia;dia;inicio;fim;descricao;responsavel
+1;1;AULA;1;2026-11-16;2026-12-31;SEG;07:10;08:50;DEC METODOLOGIA DA PESQUISA (AM);MICAELLA RAISSA FALCÃO DE MOURA
+795;12;EVENTO;0;2026-12-01;;TER;14:00;15:40;Defesa de TCC;Coordenação
 ```
 
 | Campo | Regra |
@@ -93,10 +98,11 @@ id;id_sala;atividade;recorrente;data;dia;inicio;fim;descricao;responsavel
 | `id` | > 0, único (é por ele que se edita ou exclui uma reserva) |
 | `id_sala` | > 0 (o `id` da sala) |
 | `atividade` | `AULA`, `MONITORIA`, `EXTENSAO`, `EVENTO` ou `OUTRO` |
-| `recorrente` | `1` = toda semana, `0` = uma vez só |
-| `data` | `AAAA-MM-DD`. Obrigatória quando `recorrente = 0`; pode ficar vazia quando `1` |
-| `dia` | `SEG` `TER` `QUA` `QUI` `SEX` `SAB` `DOM` |
-| `inicio`, `fim` | `HH:MM` (no código: minutos 0–1439); `fim` depois de `inicio` |
+| `recorrente` | `1` = uma série semanal, `0` = uma vez só; a série ocupa um único registro e ID |
+| `data_inicio` | `AAAA-MM-DD`; início da série ou data da reserva pontual |
+| `fim_recorrencia` | Para séries, 31/12 do ano da data inicial; vazio para reserva pontual |
+| `dia` | `SEG` `TER` `QUA` `QUI` `SEX` `SAB` `DOM`; para séries, deve corresponder à data inicial |
+| `inicio_hora`, `fim_hora` | `HH:MM` (no código: minutos 0–1439); fim depois do início |
 | `descricao` | obrigatória, até 49 bytes |
 | `responsavel` | obrigatório, até 79 bytes |
 
@@ -107,7 +113,8 @@ id;id_sala;atividade;recorrente;data;dia;inicio;fim;descricao;responsavel
 | Arquivo não existe (1ª execução) | `PERS_OK`, 0 registros, `rel.arquivo_ausente = 1` |
 | Arquivo vazio | `PERS_OK`, 0 registros |
 | Cabeçalho ausente ou de outro tipo/versão | `PERS_ERRO_FORMATO`, nada carregado |
-| `reservas.txt` antigo (`v1`, sem o `id`) | `PERS_ERRO_FORMATO`: apague o arquivo para o programa recarregar `dados_exemplo/` |
+| `reservas.txt` antigo (`v1`, sem o `id`) | `PERS_ERRO_FORMATO` |
+| Reservas `v2` | Lidas e migradas em memória; séries sem data inicial usam 13/11/2026 como âncora e avançam até o próximo dia semanal. Se havia data, ela é alinhada ao dia semanal. O próximo salvamento grava `v3`. |
 | Linha inválida (campo faltando, data/hora impossível, id repetido, nome de sala repetido...) | linha ignorada e contada em `rel.linhas_invalidas` |
 | Registro inválido ao salvar | `PERS_ERRO_DADO_INVALIDO`, arquivo **não** é alterado |
 | Erro de disco | `PERS_ERRO_ABRIR`, `PERS_ERRO_LEITURA` ou `PERS_ERRO_ESCRITA` |
@@ -124,13 +131,13 @@ recuperada com `pers_restaurar_backup()`.
 make test
 ```
 
-Rodam 103 verificações cobrindo todos os critérios da issue #4. Entre elas,
-carregam os dados reais de `dados_exemplo/` e conferem que salvar e carregar
-de novo devolve exatamente os mesmos dados. O alvo `test` não precisa do GTK.
+As verificações cobrem os critérios da issue #4, migração de recorrências e
+leitura/gravação dos dados reais de `dados_exemplo/`. O alvo `test` não precisa
+do GTK.
 
 No Windows sem `make`, rode a partir da pasta `build/`:
 ```
-gcc -std=c99 -Wall -I../include ../src/persistencia.c ../tests/test_persistencia.c -o test_persistencia.exe
+gcc -std=c99 -Wall -I../include ../src/persistencia.c ../src/alocacao.c ../tests/test_persistencia.c -o test_persistencia.exe
 .\test_persistencia.exe
 ```
 

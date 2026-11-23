@@ -1,4 +1,5 @@
 #include "interface.h"
+#include "../include/aplicacao.h"
 #include <string.h>
 
 typedef struct {
@@ -67,7 +68,7 @@ static void preencher_lista(TelaSalas *t) {
     gtk_list_box_remove(GTK_LIST_BOX(t->lista), GTK_WIDGET(r));
 
   for (int i = 0; i < g_n_salas; i++) {
-    SalaTeste *s = &g_salas[i];
+    SalaVista *s = &g_salas[i];
     char lug[16];
     g_snprintf(lug, sizeof lug, "%d", s->lugares);
     GtkWidget *caixa =
@@ -84,7 +85,7 @@ static void preencher_lista(TelaSalas *t) {
 }
 
 static void mostrar_sala(TelaSalas *t, int i) {
-  SalaTeste *s = &g_salas[i];
+  SalaVista *s = &g_salas[i];
   char *tit = g_strdup_printf("Editar %s", s->nome);
   gtk_label_set_text(GTK_LABEL(t->titulo_form), tit);
   g_free(tit);
@@ -137,21 +138,64 @@ static void ao_salvar(GtkButton *b, gpointer dados) {
   char *local =
       g_strstrip(g_strdup(gtk_editable_get_text(GTK_EDITABLE(t->campo_local))));
   char *erro = NULL;
+  int id_sala_salva = 0;
 
   if (nome[0] == '\0') {
     erro = g_strdup("Informe o nome da sala.");
   } else if (local[0] == '\0') {
     erro = g_strdup("Informe o local (bloco ou prédio).");
   } else {
+    Aplicacao *app = aplicacao_padrao();
+    Sala *existente = NULL;
+    if (app == NULL) {
+      erro = g_strdup("Não foi possível carregar os dados das salas.");
+    } else if (strlen(nome) >= sizeof(((Sala *)0)->nome)) {
+      erro = g_strdup("O nome da sala excede o limite permitido.");
+    }
+
     for (int i = 0; i < g_n_salas; i++) {
-      if (i != t->selecionado &&
+      if (!erro && i != t->selecionado &&
           g_ascii_strcasecmp(g_salas[i].nome, nome) == 0) {
         erro = g_strdup_printf("Já existe uma sala chamada %s.", nome);
         break;
       }
     }
-    if (!erro && t->selecionado < 0 && g_n_salas >= MAX_SALAS)
-      erro = g_strdup("Limite de salas atingido.");
+    if (!erro && t->selecionado >= 0) {
+      existente =
+          aplicacao_buscar_sala(app, g_salas[t->selecionado].id);
+      if (existente == NULL)
+        erro = g_strdup("A sala selecionada não foi encontrada nos dados.");
+    }
+
+    if (!erro) {
+      Sala sala = {0};
+      if (existente != NULL) {
+        sala = *existente;
+      }
+
+      if (!erro) {
+        const char *localSalvar = local;
+        if (existente != NULL && existente->local[0] == '\0' &&
+            strcmp(local, "Local não informado") == 0)
+          localSalvar = "";
+        g_strlcpy(sala.nome, nome, sizeof sala.nome);
+        g_strlcpy(sala.local, localSalvar, sizeof sala.local);
+        sala.capacidade =
+            gtk_spin_button_get_value_as_int(GTK_SPIN_BUTTON(t->spin_lugares));
+        sala.hasProjetor =
+            gtk_check_button_get_active(GTK_CHECK_BUTTON(t->chk_projetor));
+        sala.isAcessivel =
+            gtk_check_button_get_active(GTK_CHECK_BUTTON(t->chk_acessivel));
+
+        int salvou = existente != NULL
+                         ? aplicacao_editar_sala(app, sala.id, sala)
+                         : aplicacao_salvar_sala(app, &sala);
+        if (!salvou)
+          erro = g_strdup("Não foi possível persistir as alterações da sala.");
+        else
+          id_sala_salva = sala.id;
+      }
+    }
   }
 
   if (erro) {
@@ -162,8 +206,11 @@ static void ao_salvar(GtkButton *b, gpointer dados) {
     return;
   }
 
-  int destino = (t->selecionado >= 0) ? t->selecionado : g_n_salas++;
-  SalaTeste *s = &g_salas[destino];
+  int destino = (t->selecionado >= 0) ? t->selecionado : g_n_salas;
+  if (t->selecionado < 0)
+    g_salas = g_realloc_n(g_salas, g_n_salas + 1, sizeof *g_salas);
+  SalaVista *s = &g_salas[destino];
+  s->id = id_sala_salva;
   g_strlcpy(s->nome, nome, sizeof s->nome);
   g_strlcpy(s->local, local, sizeof s->local);
   s->lugares =
@@ -171,6 +218,8 @@ static void ao_salvar(GtkButton *b, gpointer dados) {
   s->projetor = gtk_check_button_get_active(GTK_CHECK_BUTTON(t->chk_projetor));
   s->acessivel =
       gtk_check_button_get_active(GTK_CHECK_BUTTON(t->chk_acessivel));
+  if (t->selecionado < 0)
+    g_n_salas++;
 
   preencher_lista(t);
   t->selecionado = destino;
@@ -250,7 +299,7 @@ GtkWidget *tela_salas_criar(Estado *e) {
   gtk_box_append(GTK_BOX(form), t->titulo_form);
 
   t->campo_nome = gtk_entry_new();
-  gtk_entry_set_max_length(GTK_ENTRY(t->campo_nome), 30);
+  gtk_entry_set_max_length(GTK_ENTRY(t->campo_nome), 19);
   t->campo_local = gtk_entry_new();
   gtk_entry_set_max_length(GTK_ENTRY(t->campo_local), 30);
   gtk_widget_set_hexpand(t->campo_local, TRUE);

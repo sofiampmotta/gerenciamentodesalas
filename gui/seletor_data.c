@@ -56,7 +56,7 @@ static void ao_dia(GtkCalendar *cal, gpointer dados) {
 GtkWidget *seletor_data_criar(int data, void (*ao_mudar)(gpointer),
                               gpointer dados) {
   Seletor *s = g_new0(Seletor, 1);
-  s->data = dados_data_valida(data) ? data : DATA_PADRAO;
+  s->data = dados_data_valida(data) ? data : dados_data_hoje();
   s->ao_mudar = ao_mudar;
   s->dados = dados;
 
@@ -76,7 +76,7 @@ GtkWidget *seletor_data_criar(int data, void (*ao_mudar)(gpointer),
 
 int seletor_data_get(GtkWidget *w) {
   Seletor *s = g_object_get_data(G_OBJECT(w), "seletor");
-  return s ? s->data : DATA_PADRAO;
+  return s ? s->data : dados_data_hoje();
 }
 
 void seletor_data_set(GtkWidget *w, int data) {

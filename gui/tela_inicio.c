@@ -3,9 +3,6 @@
 #include <string.h>
 #include <time.h>
 
-#define HOJE_TESTE DATA_PADRAO
-#define AGORA_TESTE (10 * 60 + 30)
-
 typedef struct {
   Estado *e;
   GtkWidget *titulo, *sub;
@@ -121,7 +118,7 @@ static GtkWidget *linha_ocupacao(const char *hora, const char *atividade,
 static int contar_reservas_dia(int data_yyyymmdd) {
   int total = 0;
   for (int i = 0; i < g_n_reservas; i++) {
-    if (g_reservas[i].dia == data_yyyymmdd)
+    if (dados_reserva_ocorre_em(&g_reservas[i], data_yyyymmdd))
       total++;
   }
   return total;
@@ -160,11 +157,14 @@ static int cmp_prox(const void *pa, const void *pb) {
 }
 
 static void atualizar(TelaInicio *t) {
-  int hoje_dados = HOJE_TESTE, agora = AGORA_TESTE;
-
   time_t agora_t = time(NULL);
   struct tm *tm_local = localtime(&agora_t);
-  int hora_atual = tm_local ? tm_local->tm_hour : (agora / 60);
+  int hoje_dados =
+      tm_local ? (tm_local->tm_year + 1900) * 10000 +
+                     (tm_local->tm_mon + 1) * 100 + tm_local->tm_mday
+               : dados_data_hoje();
+  int agora = tm_local ? tm_local->tm_hour * 60 + tm_local->tm_min : 0;
+  int hora_atual = tm_local ? tm_local->tm_hour : 0;
 
   const char *nome =
       t->e->rotulo_nome ? gtk_label_get_text(GTK_LABEL(t->e->rotulo_nome)) : "";
@@ -191,13 +191,14 @@ static void atualizar(TelaInicio *t) {
   }
 
   /* 1) Livres agora */
-  Livre livres[MAX_SALAS];
+  Livre *livres = g_new(Livre, g_n_salas);
   int nl = 0;
   for (int s = 0; s < g_n_salas; s++) {
     int ocupada = 0, ate = 24 * 60;
     for (int i = 0; i < g_n_reservas; i++) {
-      const ReservaTeste *r = &g_reservas[i];
-      if (r->dia != hoje_dados || strcmp(r->sala, g_salas[s].nome) != 0)
+      const ReservaVista *r = &g_reservas[i];
+      if (!dados_reserva_ocorre_em(r, hoje_dados) ||
+          strcmp(r->sala, g_salas[s].nome) != 0)
         continue;
       if (r->ini <= agora && agora < r->fim)
         ocupada = 1;
@@ -226,7 +227,7 @@ static void atualizar(TelaInicio *t) {
     gtk_box_append(GTK_BOX(t->lista_livres), l);
   }
   for (int k = 0; k < nl; k++) {
-    const SalaTeste *sl = &g_salas[livres[k].sala];
+    const SalaVista *sl = &g_salas[livres[k].sala];
     char lug[24], ate[40], h[8];
     g_snprintf(lug, sizeof lug, "%d lugares", sl->lugares);
     if (livres[k].ate >= 24 * 60) {
@@ -237,11 +238,14 @@ static void atualizar(TelaInicio *t) {
     }
     gtk_box_append(GTK_BOX(t->lista_livres), linha_livre(sl->nome, lug, ate));
   }
+  g_free(livres);
 
   /* 2) Próximas ocupações (abaixo de Livres agora) */
-  int prox[MAX_RESERVAS], np = 0;
+  int *prox = g_new(int, g_n_reservas);
+  int np = 0;
   for (int i = 0; i < g_n_reservas; i++)
-    if (g_reservas[i].dia == hoje_dados && g_reservas[i].ini > agora)
+    if (dados_reserva_ocorre_em(&g_reservas[i], hoje_dados) &&
+        g_reservas[i].ini > agora)
       prox[np++] = i;
   qsort(prox, np, sizeof(int), cmp_prox);
 
@@ -256,12 +260,13 @@ static void atualizar(TelaInicio *t) {
                    linha_ocupacao("HORÁRIO", "ATIVIDADE", "SALA", TRUE));
   }
   for (int k = 0; k < np && k < 4; k++) {
-    const ReservaTeste *r = &g_reservas[prox[k]];
+    const ReservaVista *r = &g_reservas[prox[k]];
     char h[8];
     dados_hora_texto(r->ini, h, sizeof h);
     gtk_box_append(GTK_BOX(t->lista_prox),
                    linha_ocupacao(h, r->atividade, r->sala, FALSE));
   }
+  g_free(prox);
 
   /* 3) Faixa compacta de dias com movimento (diferencial sem duplicar
    * seletor/grade) */

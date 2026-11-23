@@ -2,11 +2,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* PROVISÓRIO: "hoje" e "agora" fixos, iguais aos do Início. Na integração, usar
- * o relógio. */
-#define VISAO_HOJE DATA_PADRAO
-#define VISAO_AGORA (10 * 60 + 30)
-
 #define COL_HORA 110
 #define COL_ATIV 160
 #define COL_RESP 150
@@ -100,8 +95,8 @@ static const char *classe_chip(const char *tipo) {
   return NULL;
 }
 
-static int passa(const ReservaTeste *r, const Filtro *f) {
-  if (r->dia != f->dia)
+static int passa(const ReservaVista *r, const Filtro *f) {
+  if (!dados_reserva_ocorre_em(r, f->dia))
     return 0;
   if (f->tipo[0] && strcmp(r->tipo, f->tipo) != 0)
     return 0;
@@ -111,8 +106,8 @@ static int passa(const ReservaTeste *r, const Filtro *f) {
 }
 
 static int comparar(const void *pa, const void *pb) {
-  const ReservaTeste *x = &g_reservas[*(const int *)pa];
-  const ReservaTeste *y = &g_reservas[*(const int *)pb];
+  const ReservaVista *x = &g_reservas[*(const int *)pa];
+  const ReservaVista *y = &g_reservas[*(const int *)pb];
   if (x->ini != y->ini)
     return x->ini - y->ini;
   if (x->fim != y->fim)
@@ -120,7 +115,7 @@ static int comparar(const void *pa, const void *pb) {
   return strcmp(x->sala, y->sala);
 }
 
-static GtkWidget *linha_reserva(const ReservaTeste *r) {
+static GtkWidget *linha_reserva(const ReservaVista *r) {
   GtkWidget *linha = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
   gtk_widget_add_css_class(linha, "linha-quadro");
 
@@ -159,7 +154,8 @@ static GtkWidget *cabecalho(void) {
 
 static void montar_quadro(TelaVisao *t, const Filtro *f) {
   limpar(t->quadro);
-  int idx[MAX_RESERVAS], n = 0;
+  int *idx = g_new(int, g_n_reservas);
+  int n = 0;
   for (int i = 0; i < g_n_reservas; i++)
     if (passa(&g_reservas[i], f))
       idx[n++] = i;
@@ -171,12 +167,13 @@ static void montar_quadro(TelaVisao *t, const Filtro *f) {
     gtk_label_set_xalign(GTK_LABEL(l), 0);
     gtk_widget_set_margin_top(l, 12);
     gtk_box_append(GTK_BOX(t->quadro), l);
+    g_free(idx);
     return;
   }
 
   int k = 0;
   while (k < n) {
-    const ReservaTeste *p = &g_reservas[idx[k]];
+    const ReservaVista *p = &g_reservas[idx[k]];
     int j = k;
     while (j < n && g_reservas[idx[j]].ini == p->ini &&
            g_reservas[idx[j]].fim == p->fim)
@@ -201,6 +198,7 @@ static void montar_quadro(TelaVisao *t, const Filtro *f) {
     gtk_box_append(GTK_BOX(t->quadro), grupo);
     k = j;
   }
+  g_free(idx);
 }
 
 static double px(int min, int w) {
@@ -223,8 +221,9 @@ static void desenhar_oc(GtkDrawingArea *area, cairo_t *cr, int w, int h,
 
   cairo_set_source_rgb(cr, 0.62, 0.11, 0.14);
   for (int i = 0; i < g_n_reservas; i++) {
-    const ReservaTeste *o = &g_reservas[i];
-    if (o->dia != f->dia || strcmp(o->sala, f->sala) != 0)
+    const ReservaVista *o = &g_reservas[i];
+    if (!dados_reserva_ocorre_em(o, f->dia) ||
+        strcmp(o->sala, f->sala) != 0)
       continue;
     if (f->tipo[0] && strcmp(o->tipo, f->tipo) != 0)
       continue;
@@ -249,14 +248,15 @@ static void desenhar_oc(GtkDrawingArea *area, cairo_t *cr, int w, int h,
 static void montar_ocupacao(TelaVisao *t, const Filtro *f) {
   limpar(t->ocupacao);
   for (int s = 0; s < g_n_salas; s++) {
-    const SalaTeste *sl = &g_salas[s];
+    const SalaVista *sl = &g_salas[s];
     if (f->sala[0] && strcmp(sl->nome, f->sala) != 0)
       continue;
 
     int n = 0;
     for (int i = 0; i < g_n_reservas; i++) {
-      const ReservaTeste *r = &g_reservas[i];
-      if (r->dia != f->dia || strcmp(r->sala, sl->nome) != 0)
+      const ReservaVista *r = &g_reservas[i];
+      if (!dados_reserva_ocorre_em(r, f->dia) ||
+          strcmp(r->sala, sl->nome) != 0)
         continue;
       if (f->tipo[0] && strcmp(r->tipo, f->tipo) != 0)
         continue;
@@ -311,12 +311,19 @@ static void definir(GtkWidget *l, int n, const char *resto) {
 
 static void resumo(TelaVisao *t, int dia) {
   int ocup = 0, conflitos = 0, uso = 0;
+  GDateTime *agora = g_date_time_new_now_local();
+  int hoje = g_date_time_get_year(agora) * 10000 +
+             g_date_time_get_month(agora) * 100 +
+             g_date_time_get_day_of_month(agora);
+  int minuto_atual =
+      g_date_time_get_hour(agora) * 60 + g_date_time_get_minute(agora);
+  g_date_time_unref(agora);
   for (int i = 0; i < g_n_reservas; i++) {
-    if (g_reservas[i].dia != dia)
+    if (!dados_reserva_ocorre_em(&g_reservas[i], dia))
       continue;
     ocup++;
     for (int j = i + 1; j < g_n_reservas; j++) {
-      if (g_reservas[j].dia != dia ||
+      if (!dados_reserva_ocorre_em(&g_reservas[j], dia) ||
           strcmp(g_reservas[i].sala, g_reservas[j].sala) != 0)
         continue;
       if (g_reservas[i].ini < g_reservas[j].fim &&
@@ -327,18 +334,19 @@ static void resumo(TelaVisao *t, int dia) {
   for (int s = 0; s < g_n_salas; s++) {
     int em_uso = 0, no_dia = 0;
     for (int i = 0; i < g_n_reservas; i++) {
-      const ReservaTeste *r = &g_reservas[i];
-      if (r->dia != dia || strcmp(r->sala, g_salas[s].nome) != 0)
+      const ReservaVista *r = &g_reservas[i];
+      if (!dados_reserva_ocorre_em(r, dia) ||
+          strcmp(r->sala, g_salas[s].nome) != 0)
         continue;
       no_dia = 1;
-      if (r->ini <= VISAO_AGORA && VISAO_AGORA < r->fim)
+      if (r->ini <= minuto_atual && minuto_atual < r->fim)
         em_uso = 1;
     }
-    if (dia == VISAO_HOJE ? em_uso : no_dia)
+    if (dia == hoje ? em_uso : no_dia)
       uso++;
   }
   definir(t->r_uso, uso,
-          dia == VISAO_HOJE ? "salas em uso agora"
+          dia == hoje ? "salas em uso agora"
                             : "salas com ocupação no dia");
   definir(t->r_ocup, ocup, ocup == 1 ? "ocupação no dia" : "ocupações no dia");
   definir(t->r_conf, conflitos, conflitos == 1 ? "conflito" : "conflitos");
@@ -392,7 +400,7 @@ static void recarregar_salas(TelaVisao *t) {
                 sizeof antes);
   }
 
-  const char *nomes[MAX_SALAS + 2];
+  const char **nomes = g_new(const char *, g_n_salas + 2);
   nomes[0] = "Todos os ambientes";
   for (int i = 0; i < g_n_salas; i++)
     nomes[i + 1] = g_salas[i].nome;
@@ -402,6 +410,7 @@ static void recarregar_salas(TelaVisao *t) {
       GTK_STRING_LIST(gtk_drop_down_get_model(GTK_DROP_DOWN(t->sala)));
   gtk_string_list_splice(sl, 0, g_list_model_get_n_items(G_LIST_MODEL(sl)),
                          nomes);
+  g_free(nomes);
 
   guint pos = 0;
   for (int i = 0; i < g_n_salas; i++)
@@ -521,7 +530,7 @@ GtkWidget *tela_visao_criar(Estado *e) {
   gtk_box_append(GTK_BOX(pagina), topo);
 
   /* filtros */
-  t->data = seletor_data_criar(DATA_PADRAO, NULL, NULL);
+  t->data = seletor_data_criar(dados_data_hoje(), NULL, NULL);
   t->tipo = gtk_drop_down_new_from_strings(TIPOS);
   const char *so_todos[] = {"Todos os ambientes", NULL};
   t->sala = gtk_drop_down_new_from_strings(so_todos);
