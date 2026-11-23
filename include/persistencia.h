@@ -1,93 +1,82 @@
 #ifndef PERSISTENCIA_H
 #define PERSISTENCIA_H
 
-/*
- * persistencia.h - Armazenamento e recuperacao dos dados em arquivos locais.
- *
- * Usa as estruturas Sala e Reserva definidas em salas.h. O modulo nao
- * depende da interface grafica: recebe e devolve vetores. Quem guarda os
- * dados em memoria (modulos de salas e de reservas) chama:
- *
- *   - pers_carregar_* uma vez na inicializacao;
- *   - pers_salvar_*   depois de cada alteracao (inclusao, edicao, remocao).
- *
- * Formato dos arquivos: ver docs/PERSISTENCIA.md.
- */
+// persistencia.h - guarda as salas e reservas em arquivos e le de volta.
+//
+// Quem usa este modulo e o aplicacao.c:
+//   - pers_carregar_* uma vez, quando o programa abre;
+//   - pers_salvar_*   depois de cada alteracao (incluir, editar, excluir).
+//
+// Formato dos arquivos: ver docs/PERSISTENCIA.md.
 
 #include <stddef.h>
 #include "salas.h"
 
-/* Caminhos padrao (relativos a pasta onde o programa e executado). */
+// Nomes padrao dos arquivos (na pasta onde o programa e executado)
 #define PERS_ARQ_SALAS    "salas.txt"
 #define PERS_ARQ_RESERVAS "reservas.txt"
 
-/* Tamanho maximo de um caminho de arquivo aceito pelo modulo. */
+// Tamanho maximo do caminho de um arquivo
 #define PERS_CAMINHO_MAX 512
 
 typedef enum {
     PERS_OK = 0,
-    PERS_ERRO_PARAMETRO,     /* ponteiro NULL, caminho longo demais etc.     */
-    PERS_ERRO_ABRIR,         /* nao foi possivel abrir/criar o arquivo       */
-    PERS_ERRO_LEITURA,       /* falha de E/S durante a leitura               */
-    PERS_ERRO_ESCRITA,       /* falha de E/S durante a gravacao              */
-    PERS_ERRO_FORMATO,       /* cabecalho ausente/invalido ou versao errada  */
-    PERS_ERRO_MEMORIA,       /* malloc/realloc falhou                        */
-    PERS_ERRO_DADO_INVALIDO, /* registro invalido ao salvar (nada e gravado) */
-    PERS_ERRO_SEM_BACKUP     /* restauracao pedida, mas nao ha arquivo .bak  */
+    PERS_ERRO_PARAMETRO,     // ponteiro NULL, caminho longo demais etc.
+    PERS_ERRO_ABRIR,         // nao conseguiu abrir ou criar o arquivo
+    PERS_ERRO_LEITURA,       // erro durante a leitura
+    PERS_ERRO_ESCRITA,       // erro durante a gravacao
+    PERS_ERRO_FORMATO,       // cabecalho errado ou versao errada
+    PERS_ERRO_MEMORIA,       // malloc/realloc falhou
+    PERS_ERRO_DADO_INVALIDO, // registro invalido ao salvar (nada e gravado)
+    PERS_ERRO_SEM_BACKUP     // pediu para restaurar, mas nao ha arquivo .bak
 } PersStatus;
 
-/* Informacoes sobre uma carga. Pode ser passado NULL se nao interessar. */
+// Resumo de uma carga. Pode passar NULL se nao precisar.
 typedef struct {
-    int    arquivo_ausente;         /* 1 se o arquivo nao existia (1a execucao)  */
-    size_t registros_lidos;         /* registros validos carregados              */
-    size_t linhas_invalidas;        /* linhas ignoradas por estarem invalidas    */
-    size_t primeira_linha_invalida; /* numero da 1a linha invalida (0 = nenhuma) */
+    int    arquivo_ausente;         // 1 se o arquivo nao existia
+    size_t registros_lidos;         // quantos registros bons foram carregados
+    size_t linhas_invalidas;        // quantas linhas foram puladas
+    size_t primeira_linha_invalida; // numero da 1a linha pulada (0 = nenhuma)
 } PersRelatorio;
 
-/* -------------------------------------------------------------------- Salas */
+// ---- Salas ----
 
-/*
- * Grava as n salas do vetor em 'caminho', substituindo o conteudo anterior.
- * Todos os registros sao validados ANTES de gravar; se algum for invalido
- * (nome vazio, texto com ';' ou quebra de linha, id ou nome repetido...)
- * retorna PERS_ERRO_DADO_INVALIDO e o arquivo existente nao e alterado.
- * n pode ser 0 (o vetor pode ser NULL nesse caso).
- */
+// Grava as n salas em 'caminho', substituindo o conteudo anterior.
+// Confere todas antes de gravar. Se alguma estiver errada (nome vazio,
+// texto com ';' ou quebra de linha, id ou nome repetido...), retorna
+// PERS_ERRO_DADO_INVALIDO e o arquivo nao e alterado.
+// n pode ser 0 (e o vetor pode ser NULL nesse caso).
 PersStatus pers_salvar_salas(const char *caminho, const Sala *salas, size_t n);
 
-/*
- * Le as salas de 'caminho'. Em caso de sucesso, *salas aponta para um vetor
- * alocado com malloc (NULL se n == 0) que deve ser liberado com
- * pers_liberar(). Em caso de erro, *salas = NULL e *n = 0.
- *
- * - Arquivo ausente ou vazio: PERS_OK com *n = 0 (rel->arquivo_ausente diz qual).
- * - Cabecalho invalido: PERS_ERRO_FORMATO (nada e carregado).
- * - Linhas invalidas: ignoradas e contadas em rel->linhas_invalidas;
- *   as validas sao carregadas normalmente.
- */
+// Le as salas de 'caminho'. Se der certo, *salas aponta para um vetor
+// criado com malloc (NULL se n == 0), que deve ser liberado com
+// pers_liberar(). Se der erro, *salas = NULL e *n = 0.
+//
+// - Arquivo ausente ou vazio: PERS_OK com *n = 0.
+// - Cabecalho errado: PERS_ERRO_FORMATO (nada e carregado).
+// - Linha errada: so ela e pulada (e contada no relatorio).
 PersStatus pers_carregar_salas(const char *caminho, Sala **salas, size_t *n,
                                PersRelatorio *rel);
 
-/* ----------------------------------------------------------------- Reservas */
+// ---- Reservas ----
+// Funcionam igual as de salas. O id de cada reserva tambem e gravado
+// e nao pode repetir.
 
 PersStatus pers_salvar_reservas(const char *caminho, const Reserva *reservas, size_t n);
 
 PersStatus pers_carregar_reservas(const char *caminho, Reserva **reservas, size_t *n,
                                   PersRelatorio *rel);
 
-/* -------------------------------------------------------------- Utilitarios */
+// ---- Outras ----
 
-/* Libera vetores devolvidos pelas funcoes pers_carregar_*. Aceita NULL. */
+// Libera o vetor devolvido pelas funcoes pers_carregar_*. Aceita NULL.
 void pers_liberar(void *vetor);
 
-/*
- * Substitui 'caminho' pela copia de seguranca 'caminho.bak' (criada
- * automaticamente a cada gravacao). Util quando a carga retorna
- * PERS_ERRO_FORMATO, por exemplo.
- */
+// Volta o arquivo para a copia de seguranca 'caminho.bak'
+// (criada a cada gravacao). Util se o arquivo estragar.
 PersStatus pers_restaurar_backup(const char *caminho);
 
-/* Mensagem legivel para exibir ao usuario. Nunca retorna NULL. */
+// Frase pronta para mostrar ao usuario. Nunca retorna NULL.
 const char *pers_mensagem(PersStatus status);
 
-#endif /* PERSISTENCIA_H */
+#endif

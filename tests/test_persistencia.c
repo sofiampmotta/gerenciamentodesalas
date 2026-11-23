@@ -81,9 +81,10 @@ static Sala sala(int id, const char *nome) {
 }
 
 /* Aula semanal, como as da planilha de horarios. */
-static Reserva aula(int id_sala, Dia dia, int comeco, int fim) {
+static Reserva aula(int id, int id_sala, Dia dia, int comeco, int fim) {
   Reserva r;
   memset(&r, 0, sizeof r);
+  r.id = id;
   r.idSala = id_sala;
   r.atividade = AULA;
   strcpy(r.descricao, "DEB CÁLCULO 1 (TC)");
@@ -96,9 +97,9 @@ static Reserva aula(int id_sala, Dia dia, int comeco, int fim) {
 }
 
 /* Reserva unica, numa data (prova, evento...). */
-static Reserva evento(int id_sala, int dia, int mes, int ano, Dia dsem,
+static Reserva evento(int id, int id_sala, int dia, int mes, int ano, Dia dsem,
                       int comeco, int fim) {
-  Reserva r = aula(id_sala, dsem, comeco, fim);
+  Reserva r = aula(id, id_sala, dsem, comeco, fim);
   r.atividade = EVENTO;
   r.isRecorrente = false;
   r.data.dia = dia;
@@ -117,7 +118,8 @@ static int salas_iguais(const Sala *a, const Sala *b) {
 }
 
 static int reservas_iguais(const Reserva *a, const Reserva *b) {
-  return a->idSala == b->idSala && a->atividade == b->atividade &&
+  return a->id == b->id && a->idSala == b->idSala &&
+         a->atividade == b->atividade &&
          strcmp(a->descricao, b->descricao) == 0 &&
          strcmp(a->responsavel, b->responsavel) == 0 &&
          a->isRecorrente == b->isRecorrente && a->data.dia == b->data.dia &&
@@ -163,11 +165,11 @@ static void test_reservas_ida_e_volta(void) {
   size_t n = 0, i;
   int ok = 1;
 
-  v[0] = aula(1, SEG, H(7, 10), H(8, 50));
-  v[1] = aula(2, SAB, H(8, 50), H(12, 10));
+  v[0] = aula(1, 1, SEG, H(7, 10), H(8, 50));
+  v[1] = aula(2, 2, SAB, H(8, 50), H(12, 10));
   strcpy(v[1].responsavel, "STELA FUCALE / ANTONIO CARLOS COSTA");
-  v[2] = evento(1, 29, 2, 2028, TER, H(19, 0), H(22, 0)); /* ano bissexto */
-  v[3] = aula(3, DOM, H(0, 0), H(23, 59));                /* extremos     */
+  v[2] = evento(3, 1, 29, 2, 2028, TER, H(19, 0), H(22, 0)); /* ano bissexto */
+  v[3] = aula(4, 3, DOM, H(0, 0), H(23, 59));                /* extremos     */
   v[3].atividade = MONITORIA;
   v[3].data.dia = 3;
   v[3].data.mes = 8;
@@ -260,6 +262,11 @@ static void test_cabecalho_invalido(void) {
   escrever_texto(ARQ_RES, "#POLI-SALAS;SALAS;v1\n"); /* arquivo trocado */
   CHECK(pers_carregar_reservas(ARQ_RES, &r, &n, NULL) == PERS_ERRO_FORMATO);
 
+  /* reservas no formato antigo (v1, sem o id) */
+  escrever_texto(ARQ_RES, "#POLI-SALAS;RESERVAS;v1\n"
+                          "1;AULA;1;;SEG;07:10;08:50;QUIMICA (EM);Prof. A\n");
+  CHECK(pers_carregar_reservas(ARQ_RES, &r, &n, NULL) == PERS_ERRO_FORMATO);
+
   escrever_texto(ARQ_SAL, "\x01\x02\xff\xfe lixo binario\n");
   CHECK(pers_carregar_salas(ARQ_SAL, &s, &n, NULL) == PERS_ERRO_FORMATO);
   limpar(ARQ_SAL);
@@ -313,42 +320,58 @@ static void test_linhas_invalidas_reservas(void) {
 
   escrever_texto(
       ARQ_RES,
-      "#POLI-SALAS;RESERVAS;v1\n"
-      "1;AULA;1;;SEG;07:10;08:50;QUÍMICA (EM);Prof. A\n"     /* ok */
-      "1;PALESTRA;1;;SEG;07:10;08:50;QUÍMICA (EM);Prof. A\n" /* atividade
-                                                                inexistente  */
-      "1;AULA;1;;seg;07:10;08:50;QUÍMICA (EM);Prof. A\n" /* dia em minusculas */
-      "1;AULA;1;;XYZ;07:10;08:50;QUÍMICA (EM);Prof. A\n" /* dia inexistente */
-      "1;AULA;sim;;SEG;07:10;08:50;QUÍMICA (EM);Prof. A\n" /* recorrente nao e
-                                                              0/1   */
-      "1;EVENTO;0;;SEG;07:10;08:50;Palestra;Prof. A\n"     /* unica sem data */
-      "1;EVENTO;0;2026-02-30;SEG;07:10;08:50;Palestra;Prof. A\n" /* 30 de
-                                                                    fevereiro */
-      "1;EVENTO;0;2027-02-29;SEG;07:10;08:50;Palestra;Prof. A\n" /* 2027 nao e
-                                                                    bissexto */
-      "1;EVENTO;0;03/11/2026;SEG;07:10;08:50;Palestra;Prof. A\n" /* formato de
-                                                                    data */
-      "1;AULA;1;;TER;10:30;08:50;QUÍMICA (EM);Prof. A\n" /* fim antes do inicio
-                                                          */
-      "1;AULA;1;;TER;10:30;10:30;QUÍMICA (EM);Prof. A\n" /* duracao zero */
-      "1;AULA;1;;TER;24:00;25:00;QUÍMICA (EM);Prof. A\n" /* hora inexistente */
-      "1;AULA;1;;TER;7:10;08:50;QUÍMICA (EM);Prof. A\n"  /* hora sem zero */
-      "0;AULA;1;;TER;07:10;08:50;QUÍMICA (EM);Prof. A\n" /* sala invalida */
-      "1;AULA;1;;TER;07:10;08:50;;Prof. A\n"      /* sem descricao          */
-      "1;AULA;1;;TER;07:10;08:50;QUÍMICA (EM);\n" /* sem responsavel        */
-      "1;AULA;1;;TER;07:10;08:50;UMA DESCRICAO QUE PASSA DO LIMITE DE 49 BYTES "
-      "- TEXTO EXTRA;Prof\n"                                        /* grande */
-      "3;MONITORIA;1;;SAB;08:50;12:10;Monitoria de Cálculo;Laura\n" /* ok
-                                                                       (sabado)
-                                                                     */
-      "2;EVENTO;0;2026-12-01;TER;14:00;15:40;Defesa de TCC;Coord.\n"); /* ok
-                                                                          (data)
-                                                                        */
+      "#POLI-SALAS;RESERVAS;v2\n"
+      /* ok */
+      "1;1;AULA;1;;SEG;07:10;08:50;QUÍMICA (EM);Prof. A\n"
+      /* atividade inexistente */
+      "2;1;PALESTRA;1;;SEG;07:10;08:50;QUÍMICA (EM);Prof. A\n"
+      /* dia em minusculas */
+      "3;1;AULA;1;;seg;07:10;08:50;QUÍMICA (EM);Prof. A\n"
+      /* dia inexistente */
+      "4;1;AULA;1;;XYZ;07:10;08:50;QUÍMICA (EM);Prof. A\n"
+      /* recorrente nao e 0 ou 1 */
+      "5;1;AULA;sim;;SEG;07:10;08:50;QUÍMICA (EM);Prof. A\n"
+      /* unica sem data */
+      "6;1;EVENTO;0;;SEG;07:10;08:50;Palestra;Prof. A\n"
+      /* 30 de fevereiro */
+      "7;1;EVENTO;0;2026-02-30;SEG;07:10;08:50;Palestra;Prof. A\n"
+      /* 2027 nao e bissexto */
+      "8;1;EVENTO;0;2027-02-29;SEG;07:10;08:50;Palestra;Prof. A\n"
+      /* data no formato errado */
+      "9;1;EVENTO;0;03/11/2026;SEG;07:10;08:50;Palestra;Prof. A\n"
+      /* fim antes do inicio */
+      "10;1;AULA;1;;TER;10:30;08:50;QUÍMICA (EM);Prof. A\n"
+      /* duracao zero */
+      "11;1;AULA;1;;TER;10:30;10:30;QUÍMICA (EM);Prof. A\n"
+      /* hora inexistente */
+      "12;1;AULA;1;;TER;24:00;25:00;QUÍMICA (EM);Prof. A\n"
+      /* hora sem o zero */
+      "13;1;AULA;1;;TER;7:10;08:50;QUÍMICA (EM);Prof. A\n"
+      /* sala invalida */
+      "14;0;AULA;1;;TER;07:10;08:50;QUÍMICA (EM);Prof. A\n"
+      /* sem descricao */
+      "15;1;AULA;1;;TER;07:10;08:50;;Prof. A\n"
+      /* sem responsavel */
+      "16;1;AULA;1;;TER;07:10;08:50;QUÍMICA (EM);\n"
+      /* descricao maior que o limite */
+      "17;1;AULA;1;;TER;07:10;08:50;UMA DESCRICAO QUE PASSA DO LIMITE DE 49 "
+      "BYTES - TEXTO EXTRA;Prof\n"
+      /* id da reserva zero */
+      "0;1;AULA;1;;QUA;07:10;08:50;QUÍMICA (EM);Prof. A\n"
+      /* id da reserva repetido (o 1 ja existe) */
+      "1;1;AULA;1;;QUA;07:10;08:50;QUÍMICA (EM);Prof. A\n"
+      /* linha no formato antigo, sem o id */
+      "1;AULA;1;;QUA;07:10;08:50;QUÍMICA (EM);Prof. A\n"
+      /* ok (sabado) */
+      "20;3;MONITORIA;1;;SAB;08:50;12:10;Monitoria de Cálculo;Laura\n"
+      /* ok (com data) */
+      "21;2;EVENTO;0;2026-12-01;TER;14:00;15:40;Defesa de TCC;Coord.\n");
 
   CHECK(pers_carregar_reservas(ARQ_RES, &r, &n, &rel) == PERS_OK);
   CHECK(n == 3);
-  CHECK(rel.linhas_invalidas == 16);
+  CHECK(rel.linhas_invalidas == 19);
   CHECK(r != NULL && r[0].idSala == 1 && r[1].idSala == 3 && r[2].idSala == 2);
+  CHECK(r != NULL && r[0].id == 1 && r[1].id == 20 && r[2].id == 21);
   CHECK(r != NULL && r[1].horario.dia == SAB && r[1].atividade == MONITORIA);
   CHECK(r != NULL && !r[2].isRecorrente && r[2].data.dia == 1 &&
         r[2].data.mes == 12 && r[2].data.ano == 2026 &&
@@ -374,7 +397,7 @@ static void test_crlf_e_bom(void) {
 
 static void test_salvar_dado_invalido_nao_altera_arquivo(void) {
   Sala v[2], *lidos = NULL;
-  Reserva x[1];
+  Reserva x[2];
   size_t n = 0;
 
   limpar(ARQ_SAL);
@@ -406,17 +429,22 @@ static void test_salvar_dado_invalido_nao_altera_arquivo(void) {
   CHECK(n == 1 && strcmp(lidos[0].nome, "Original") == 0);
   pers_liberar(lidos);
 
-  x[0] = aula(1, SEG, H(10, 0), H(9, 0)); /* fim antes do inicio */
+  x[0] = aula(1, 1, SEG, H(10, 0), H(9, 0)); /* fim antes do inicio */
   CHECK(pers_salvar_reservas(ARQ_RES, x, 1) == PERS_ERRO_DADO_INVALIDO);
-  x[0] = aula(1, (Dia)9, H(7, 10), H(8, 50)); /* dia fora do enum */
+  x[0] = aula(1, 1, (Dia)9, H(7, 10), H(8, 50)); /* dia fora do enum */
   CHECK(pers_salvar_reservas(ARQ_RES, x, 1) == PERS_ERRO_DADO_INVALIDO);
-  x[0] = aula(1, SEG, H(7, 10), H(8, 50));
+  x[0] = aula(1, 1, SEG, H(7, 10), H(8, 50));
   x[0].atividade = (Atividade)42; /* atividade fora do enum */
   CHECK(pers_salvar_reservas(ARQ_RES, x, 1) == PERS_ERRO_DADO_INVALIDO);
-  x[0] = evento(1, 0, 0, 0, SEG, H(7, 10), H(8, 50)); /* unica sem data */
+  x[0] = evento(1, 1, 0, 0, 0, SEG, H(7, 10), H(8, 50)); /* unica sem data */
   CHECK(pers_salvar_reservas(ARQ_RES, x, 1) == PERS_ERRO_DADO_INVALIDO);
-  x[0] = aula(1, SEG, H(7, 10), 1440); /* passa de 23:59 */
+  x[0] = aula(1, 1, SEG, H(7, 10), 1440); /* passa de 23:59 */
   CHECK(pers_salvar_reservas(ARQ_RES, x, 1) == PERS_ERRO_DADO_INVALIDO);
+  x[0] = aula(0, 1, SEG, H(7, 10), H(8, 50)); /* reserva sem id */
+  CHECK(pers_salvar_reservas(ARQ_RES, x, 1) == PERS_ERRO_DADO_INVALIDO);
+  x[0] = aula(5, 1, SEG, H(7, 10), H(8, 50));
+  x[1] = aula(5, 2, TER, H(7, 10), H(8, 50)); /* id de reserva repetido */
+  CHECK(pers_salvar_reservas(ARQ_RES, x, 2) == PERS_ERRO_DADO_INVALIDO);
   CHECK(!existe(ARQ_RES));
   limpar(ARQ_SAL);
 }
@@ -505,7 +533,7 @@ static void test_muitos_registros(void) {
   if (!v)
     return;
   for (i = 0; i < QTD; i++)
-    v[i] = aula((int)(i % 42) + 1, (Dia)(i % 7), H(7, 10), H(8, 50));
+    v[i] = aula((int)i + 1, (int)(i % 42) + 1, (Dia)(i % 7), H(7, 10), H(8, 50));
 
   limpar(ARQ_RES);
   CHECK(pers_salvar_reservas(ARQ_RES, v, QTD) == PERS_OK);

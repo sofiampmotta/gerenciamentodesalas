@@ -12,6 +12,10 @@ em `include/salas.h`, usando arquivos de texto locais. Resolve a issue #4.
 
 ## Como usar
 
+No programa, quem chama o módulo é o `src/aplicacao.c`: ele carrega as listas
+ao abrir e salva depois de cada inclusão, edição ou exclusão. O exemplo abaixo
+mostra as chamadas diretamente:
+
 ```c
 #include "persistencia.h"
 
@@ -78,21 +82,23 @@ id;nome;capacidade;acessivel;projetor;televisao;computadores
 ### `reservas.txt`
 
 ```
-#POLI-SALAS;RESERVAS;v1
-id_sala;atividade;recorrente;data;dia;inicio;fim;descricao;responsavel
-1;AULA;1;;SEG;07:10;08:50;DEC METODOLOGIA DA PESQUISA (AM);MICAELLA RAISSA FALCÃO DE MOURA
-12;EVENTO;0;2026-12-01;TER;14:00;15:40;Defesa de TCC;Coordenação
+#POLI-SALAS;RESERVAS;v2
+id;id_sala;atividade;recorrente;data;dia;inicio;fim;descricao;responsavel
+1;1;AULA;1;;SEG;07:10;08:50;DEC METODOLOGIA DA PESQUISA (AM);MICAELLA RAISSA FALCÃO DE MOURA
+795;12;EVENTO;0;2026-12-01;TER;14:00;15:40;Defesa de TCC;Coordenação
 ```
 
 | Campo | Regra |
 |---|---|
+| `id` | > 0, único (é por ele que se edita ou exclui uma reserva) |
 | `id_sala` | > 0 (o `id` da sala) |
 | `atividade` | `AULA`, `MONITORIA`, `EXTENSAO`, `EVENTO` ou `OUTRO` |
 | `recorrente` | `1` = toda semana, `0` = uma vez só |
 | `data` | `AAAA-MM-DD`. Obrigatória quando `recorrente = 0`; pode ficar vazia quando `1` |
 | `dia` | `SEG` `TER` `QUA` `QUI` `SEX` `SAB` `DOM` |
 | `inicio`, `fim` | `HH:MM` (no código: minutos 0–1439); `fim` depois de `inicio` |
-| `descricao`, `responsavel` | obrigatórios, até 49 bytes |
+| `descricao` | obrigatória, até 49 bytes |
+| `responsavel` | obrigatório, até 79 bytes |
 
 ## Situações tratadas
 
@@ -101,7 +107,8 @@ id_sala;atividade;recorrente;data;dia;inicio;fim;descricao;responsavel
 | Arquivo não existe (1ª execução) | `PERS_OK`, 0 registros, `rel.arquivo_ausente = 1` |
 | Arquivo vazio | `PERS_OK`, 0 registros |
 | Cabeçalho ausente ou de outro tipo/versão | `PERS_ERRO_FORMATO`, nada carregado |
-| Linha inválida (campo faltando, data/hora impossível, id ou nome de sala repetido...) | linha ignorada e contada em `rel.linhas_invalidas` |
+| `reservas.txt` antigo (`v1`, sem o `id`) | `PERS_ERRO_FORMATO`: apague o arquivo para o programa recarregar `dados_exemplo/` |
+| Linha inválida (campo faltando, data/hora impossível, id repetido, nome de sala repetido...) | linha ignorada e contada em `rel.linhas_invalidas` |
 | Registro inválido ao salvar | `PERS_ERRO_DADO_INVALIDO`, arquivo **não** é alterado |
 | Erro de disco | `PERS_ERRO_ABRIR`, `PERS_ERRO_LEITURA` ou `PERS_ERRO_ESCRITA` |
 
@@ -117,7 +124,7 @@ recuperada com `pers_restaurar_backup()`.
 make test
 ```
 
-Rodam 99 verificações cobrindo todos os critérios da issue #4. Entre elas,
+Rodam 103 verificações cobrindo todos os critérios da issue #4. Entre elas,
 carregam os dados reais de `dados_exemplo/` e conferem que salvar e carregar
 de novo devolve exatamente os mesmos dados. O alvo `test` não precisa do GTK.
 
@@ -136,8 +143,8 @@ mostrou alguns pontos para discutir:
    das 794 aulas: 10 ficaram sem o departamento, 1 sem a turma e 1 teve o
    nome cortado (TÉCNICAS DE INTERVENÇÕES EM EDIFÍCIOS HISTÓRICOS). Sugestão: aumentar para 100, ou criar campos
    `turma` e `departamento`.
-2. **`Reserva` não tem `id`.** Fica difícil editar ou apagar uma reserva
-   específica (a interface vai precisar disso). Sugestão: adicionar `int id`.
+2. ~~**`Reserva` não tem `id`.**~~ Resolvido: o `id` foi adicionado à struct
+   e o `reservas.txt` passou para a versão `v2`, com o `id` no primeiro campo.
 3. **Duas turmas na mesma sala e horário:** a planilha tem 14 casos, como
    MICROCONTROLADORES e MICROPROCESSADORES na J-08, terça 20:30–22:10, com o
    mesmo professor. A checagem de conflito precisa permitir isso ou tratar

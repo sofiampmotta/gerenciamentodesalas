@@ -1,16 +1,14 @@
-/*
- * persistencia.c - Leitura e escrita das salas e reservas em arquivos de texto.
- *
- * Estrategia de gravacao segura:
- *   1. grava tudo em "<arquivo>.tmp";
- *   2. forca a ida dos dados ao disco (fflush + fsync/_commit);
- *   3. copia a versao anterior para "<arquivo>.bak";
- *   4. troca "<arquivo>.tmp" por "<arquivo>" numa unica operacao (rename).
- * Se o programa cair no meio, o arquivo original continua inteiro.
- */
+// persistencia.c - le e grava as salas e reservas em arquivos de texto.
+//
+// Gravacao segura:
+//   1. grava tudo em "<arquivo>.tmp";
+//   2. forca os dados a irem para o disco (fflush + fsync/_commit);
+//   3. copia a versao anterior para "<arquivo>.bak";
+//   4. troca o .tmp pelo arquivo verdadeiro de uma vez so (rename).
+// Se o programa fechar no meio, o arquivo original continua inteiro.
 
 #if !defined(_WIN32) && !defined(_POSIX_C_SOURCE)
-#define _POSIX_C_SOURCE 200809L /* fileno() e fsync() */
+#define _POSIX_C_SOURCE 200809L
 #endif
 
 #include "persistencia.h"
@@ -30,17 +28,17 @@
 #endif
 
 #define CAB_SALAS "#POLI-SALAS;SALAS;v1"
-#define CAB_RESERVAS "#POLI-SALAS;RESERVAS;v1"
+#define CAB_RESERVAS "#POLI-SALAS;RESERVAS;v2"
 #define SEPARADOR ';'
 #define LINHA_MAX 1024
-/* id;nome;capacidade;acessivel;projetor;televisao;computadores */
+// id;nome;capacidade;acessivel;projetor;televisao;computadores
 #define CAMPOS_SALA 7
-/* id_sala;atividade;recorrente;data;dia;inicio;fim;descricao;responsavel */
-#define CAMPOS_RESERVA 9
+// id;id_sala;atividade;recorrente;data;dia;inicio;fim;descricao;responsavel
+#define CAMPOS_RESERVA 10
 #define CAMPOS_MAX 16
-#define MINUTOS_MAX 1439 /* 23:59, como no comentario de salas.h */
+#define MINUTOS_MAX 1439 // 23:59
 
-/* Textos usados no arquivo para os enums (a posicao e o valor do enum). */
+// Nomes usados no arquivo para os enums (a posicao e o valor do enum)
 static const char *const NOMES_ATIVIDADE[] = {"AULA", "MONITORIA", "EXTENSAO",
                                               "EVENTO", "OUTRO"};
 static const char *const NOMES_DIA[] = {"SEG", "TER", "QUA", "QUI",
@@ -50,15 +48,13 @@ static const char *const NOMES_DIA[] = {"SEG", "TER", "QUA", "QUI",
   ((int)(sizeof NOMES_ATIVIDADE / sizeof NOMES_ATIVIDADE[0]))
 #define QTD_DIAS ((int)(sizeof NOMES_DIA / sizeof NOMES_DIA[0]))
 
-/* ================================================================ */
-/*  Validacao de campos                                             */
-/* ================================================================ */
+// ---- Validacao ----
 
-/* Texto cabe no campo, nao tem separador nem quebra de linha. */
+// Texto cabe no campo e nao tem separador nem quebra de linha
 static int texto_valido(const char *s, size_t tam_campo, int permite_vazio) {
   const char *fim = memchr(s, '\0', tam_campo);
   if (fim == NULL)
-    return 0; /* sem terminador */
+    return 0; // sem '\0' no final
   if (!permite_vazio && fim == s)
     return 0;
   for (; s < fim; s++) {
@@ -83,13 +79,14 @@ static int data_valida(const Data *d) {
   return d->dia <= dias[d->mes - 1] + (d->mes == 2 && eh_bissexto(d->ano));
 }
 
+// Confere se o valor do bool e 0 ou 1
 static int bool_valido(bool b) {
   unsigned char byte;
-  memcpy(&byte, &b, 1); /* evita UB ao ler bool com lixo */
+  memcpy(&byte, &b, 1);
   return byte == 0 || byte == 1;
 }
 
-/* Comparacao sem diferenciar maiusculas/minusculas (so letras ASCII). */
+// Compara dois textos sem diferenciar maiusculas e minusculas
 static int iguais_sem_caixa(const char *a, const char *b) {
   for (; *a && *b; a++, b++) {
     if (tolower((unsigned char)*a) != tolower((unsigned char)*b))
@@ -106,14 +103,14 @@ static int sala_valida(const Sala *s) {
 }
 
 static int reserva_valida(const Reserva *r) {
-  if (r->idSala <= 0)
+  if (r->id <= 0 || r->idSala <= 0)
     return 0;
   if ((int)r->atividade < 0 || (int)r->atividade >= QTD_ATIVIDADES)
     return 0;
   if (!bool_valido(r->isRecorrente))
     return 0;
 
-  /* Reserva unica precisa de data. Recorrente pode ter data (inicio) ou nao. */
+  // Reserva unica precisa de data valida. Na recorrente a data e opcional.
   if (r->isRecorrente) {
     if (!data_vazia(&r->data) && !data_valida(&r->data))
       return 0;
@@ -131,21 +128,23 @@ static int reserva_valida(const Reserva *r) {
          texto_valido(r->responsavel, sizeof r->responsavel, 0);
 }
 
-/* Duas salas nao podem ter o mesmo id nem o mesmo nome. */
+// Duas salas nao podem ter o mesmo id nem o mesmo nome
 static int salas_duplicadas(const void *x, const void *y) {
   const Sala *a = x, *b = y;
   return a->id == b->id || iguais_sem_caixa(a->nome, b->nome);
 }
 
-/* ================================================================ */
-/*  Funcoes auxiliares de leitura                                   */
-/* ================================================================ */
+// Duas reservas nao podem ter o mesmo id
+static int reservas_duplicadas(const void *x, const void *y) {
+  const Reserva *a = x, *b = y;
+  return a->id == b->id;
+}
 
-/*
- * Le uma linha sem o '\n' (e sem '\r', para arquivos vindos do Windows).
- * Retorna 1 = linha lida, 0 = fim do arquivo, -1 = erro de E/S,
- *         2 = linha longa demais (o restante e descartado).
- */
+// ---- Leitura de uma linha ----
+
+// Le uma linha sem o '\n' (e sem o '\r' que o Windows coloca).
+// Retorna 1 = linha lida, 0 = fim do arquivo, -1 = erro de leitura,
+//         2 = linha longa demais (o resto da linha e descartado).
 static int ler_linha(FILE *f, char *buf, size_t tam) {
   size_t len;
   int c;
@@ -157,7 +156,8 @@ static int ler_linha(FILE *f, char *buf, size_t tam) {
   if (len > 0 && buf[len - 1] == '\n') {
     buf[--len] = '\0';
   } else if (!feof(f)) {
-    while ((c = fgetc(f)) != EOF && c != '\n') { /* descarta */
+    while ((c = fgetc(f)) != EOF && c != '\n') {
+      // descarta o resto da linha
     }
     return ferror(f) ? -1 : 2;
   }
@@ -166,7 +166,7 @@ static int ler_linha(FILE *f, char *buf, size_t tam) {
   return 1;
 }
 
-/* Quebra a linha nos separadores (modifica a linha). Retorna nº de campos. */
+// Corta a linha nos ';' (modifica a linha). Retorna quantos campos achou.
 static int dividir_campos(char *linha, char *campos[], int max) {
   int n = 0;
   char *p = linha;
@@ -207,7 +207,7 @@ static int ler_bool(const char *s, bool *saida) {
   return 0;
 }
 
-/* Procura o texto na tabela de nomes; devolve a posicao ou -1. */
+// Procura o texto na tabela de nomes. Retorna a posicao ou -1.
 static int ler_nome(const char *s, const char *const tabela[], int qtd) {
   int i;
   for (i = 0; i < qtd; i++) {
@@ -234,7 +234,7 @@ static int digitos(const char *s, int qtd) {
   return 1;
 }
 
-/* "AAAA-MM-DD" -> Data (sem validar o calendario). "" -> 0/0/0. */
+// "AAAA-MM-DD" -> Data. Texto vazio vira 0/0/0.
 static int ler_data(const char *s, Data *d) {
   if (*s == '\0') {
     d->dia = d->mes = d->ano = 0;
@@ -250,7 +250,7 @@ static int ler_data(const char *s, Data *d) {
   return 1;
 }
 
-/* "HH:MM" -> minutos desde 00:00. */
+// "HH:MM" -> minutos desde 00:00
 static int ler_hora(const char *s, int *minutos) {
   int h, m;
   if (strlen(s) != 5 || !digitos(s, 2) || s[2] != ':' || !digitos(s + 3, 2))
@@ -263,7 +263,7 @@ static int ler_hora(const char *s, int *minutos) {
   return 1;
 }
 
-/* ---- conversao linha -> registro ---- */
+// ---- Linha do arquivo -> struct ----
 
 static int ler_sala(char **c, int n, void *destino) {
   Sala *s = destino;
@@ -293,37 +293,37 @@ static int ler_reserva(char **c, int n, void *destino) {
   if (n != CAMPOS_RESERVA)
     return 0;
   memset(r, 0, sizeof *r);
-  if (!ler_inteiro(c[0], 1, INT_MAX, &r->idSala))
+  if (!ler_inteiro(c[0], 1, INT_MAX, &r->id))
     return 0;
-  atividade = ler_nome(c[1], NOMES_ATIVIDADE, QTD_ATIVIDADES);
+  if (!ler_inteiro(c[1], 1, INT_MAX, &r->idSala))
+    return 0;
+  atividade = ler_nome(c[2], NOMES_ATIVIDADE, QTD_ATIVIDADES);
   if (atividade < 0)
     return 0;
   r->atividade = (Atividade)atividade;
-  if (!ler_bool(c[2], &r->isRecorrente))
+  if (!ler_bool(c[3], &r->isRecorrente))
     return 0;
-  if (!ler_data(c[3], &r->data))
+  if (!ler_data(c[4], &r->data))
     return 0;
-  dia = ler_nome(c[4], NOMES_DIA, QTD_DIAS);
+  dia = ler_nome(c[5], NOMES_DIA, QTD_DIAS);
   if (dia < 0)
     return 0;
   r->horario.dia = (Dia)dia;
-  if (!ler_hora(c[5], &r->horario.comeco))
+  if (!ler_hora(c[6], &r->horario.comeco))
     return 0;
-  if (!ler_hora(c[6], &r->horario.fim))
+  if (!ler_hora(c[7], &r->horario.fim))
     return 0;
-  if (!copiar_texto(r->descricao, sizeof r->descricao, c[7]))
+  if (!copiar_texto(r->descricao, sizeof r->descricao, c[8]))
     return 0;
-  if (!copiar_texto(r->responsavel, sizeof r->responsavel, c[8]))
+  if (!copiar_texto(r->responsavel, sizeof r->responsavel, c[9]))
     return 0;
   return reserva_valida(r);
 }
 
-/* ================================================================ */
-/*  Carga generica                                                  */
-/* ================================================================ */
+// ---- Carregar (serve para salas e reservas) ----
 
 typedef int (*LerRegistroFn)(char **campos, int n, void *destino);
-typedef int (*DuplicadoFn)(const void *a, const void *b); /* pode ser NULL */
+typedef int (*DuplicadoFn)(const void *a, const void *b);
 
 static int ja_existe(const char *base, size_t n, size_t tam, DuplicadoFn dup,
                      const void *reg) {
@@ -368,7 +368,7 @@ static PersStatus carregar(const char *caminho, const char *cabecalho,
 
   f = fopen(caminho, "rb");
   if (f == NULL) {
-    if (errno == ENOENT) { /* primeira execucao: comeca vazio */
+    if (errno == ENOENT) { // arquivo nao existe: primeira vez, lista vazia
       rel->arquivo_ausente = 1;
       return PERS_OK;
     }
@@ -389,14 +389,15 @@ static PersStatus carregar(const char *caminho, const char *cabecalho,
       break;
     }
 
+    // Pula os 3 bytes que o Bloco de Notas as vezes coloca no inicio
     if (num_linha == 1 && (unsigned char)p[0] == 0xEF &&
         (unsigned char)p[1] == 0xBB && (unsigned char)p[2] == 0xBF) {
-      p += 3; /* BOM UTF-8 (ex.: salvo pelo Bloco de Notas) */
+      p += 3;
     }
 
     if (!achou_cabecalho) {
       if (r == 1 && p[0] == '\0')
-        continue; /* linhas em branco */
+        continue; // linha em branco
       if (r != 1 || strcmp(p, cabecalho) != 0) {
         status = PERS_ERRO_FORMATO;
         break;
@@ -406,7 +407,7 @@ static PersStatus carregar(const char *caminho, const char *cabecalho,
     }
 
     if (r == 1 && (p[0] == '\0' || p[0] == '#'))
-      continue; /* branco/comentario */
+      continue; // linha em branco ou comentario
 
     if (r == 2 ||
         !ler(campos, dividir_campos(p, campos, CAMPOS_MAX), registro) ||
@@ -415,6 +416,7 @@ static PersStatus carregar(const char *caminho, const char *cabecalho,
       continue;
     }
 
+    // Lista cheia: dobra o tamanho (16, 32, 64...)
     if (n == cap) {
       size_t nova = cap ? cap * 2 : 16;
       char *tmp = realloc(vetor, nova * tam);
@@ -429,8 +431,7 @@ static PersStatus carregar(const char *caminho, const char *cabecalho,
     n++;
   }
 
-  /* Arquivo vazio (sem cabecalho) chega aqui com n == 0 e e tratado
-     como lista vazia, igual ao arquivo ausente. */
+  // Arquivo vazio chega aqui com n == 0 e vira lista vazia
   free(registro);
   fclose(f);
 
@@ -446,9 +447,7 @@ static PersStatus carregar(const char *caminho, const char *cabecalho,
   return PERS_OK;
 }
 
-/* ================================================================ */
-/*  Gravacao segura                                                 */
-/* ================================================================ */
+// ---- Gravar ----
 
 typedef int (*EscreverFn)(FILE *f, const void *registro);
 
@@ -465,13 +464,15 @@ static int escrever_reserva(FILE *f, const void *x) {
   if (!data_vazia(&r->data))
     snprintf(data, sizeof data, "%04d-%02d-%02d", r->data.ano, r->data.mes,
              r->data.dia);
-  return fprintf(f, "%d;%s;%d;%s;%s;%02d:%02d;%02d:%02d;%s;%s\n", r->idSala,
-                 NOMES_ATIVIDADE[r->atividade], r->isRecorrente ? 1 : 0, data,
-                 NOMES_DIA[r->horario.dia], r->horario.comeco / 60,
-                 r->horario.comeco % 60, r->horario.fim / 60,
-                 r->horario.fim % 60, r->descricao, r->responsavel);
+  return fprintf(f, "%d;%d;%s;%d;%s;%s;%02d:%02d;%02d:%02d;%s;%s\n", r->id,
+                 r->idSala, NOMES_ATIVIDADE[r->atividade],
+                 r->isRecorrente ? 1 : 0, data, NOMES_DIA[r->horario.dia],
+                 r->horario.comeco / 60, r->horario.comeco % 60,
+                 r->horario.fim / 60, r->horario.fim % 60, r->descricao,
+                 r->responsavel);
 }
 
+// Obriga os dados a irem para o disco agora
 static int sincronizar_disco(FILE *f) {
 #ifdef _WIN32
   return _commit(_fileno(f));
@@ -480,7 +481,7 @@ static int sincronizar_disco(FILE *f) {
 #endif
 }
 
-/* Troca 'destino' por 'origem' numa unica operacao. 0 = sucesso. */
+// Troca 'destino' por 'origem' de uma vez so. Retorna 0 se deu certo.
 static int substituir_arquivo(const char *origem, const char *destino) {
 #ifdef _WIN32
   return MoveFileExA(origem, destino,
@@ -492,7 +493,7 @@ static int substituir_arquivo(const char *origem, const char *destino) {
 #endif
 }
 
-/* Copia byte a byte. 0 = ok, 1 = origem nao existe, -1 = erro. */
+// Copia um arquivo. Retorna 0 = ok, 1 = origem nao existe, -1 = erro.
 static int copiar_arquivo(const char *origem, const char *destino) {
   char buf[4096];
   size_t lidos;
@@ -556,11 +557,11 @@ static PersStatus gravar(const char *caminho, const char *cabecalho,
     ok = 0;
 
   if (!ok) {
-    remove(tmp); /* original permanece intacto */
+    remove(tmp); // o arquivo original nao foi mexido
     return PERS_ERRO_ESCRITA;
   }
 
-  /* Copia de seguranca da versao anterior (melhor esforco). */
+  // Copia de seguranca da versao anterior
   (void)copiar_arquivo(caminho, bak);
 
   if (substituir_arquivo(tmp, caminho) != 0) {
@@ -570,7 +571,7 @@ static PersStatus gravar(const char *caminho, const char *cabecalho,
   return PERS_OK;
 }
 
-/* Valida todos os registros e procura duplicados antes de gravar. */
+// Confere todos os registros (e se ha repetidos) antes de gravar
 static int vetor_valido(const void *dados, size_t n, size_t tam,
                         int (*valido)(const void *), DuplicadoFn dup) {
   const char *base = dados;
@@ -587,9 +588,7 @@ static int vetor_valido(const void *dados, size_t n, size_t tam,
 static int sala_valida_v(const void *r) { return sala_valida(r); }
 static int reserva_valida_v(const void *r) { return reserva_valida(r); }
 
-/* ================================================================ */
-/*  API publica                                                     */
-/* ================================================================ */
+// ---- Funcoes do persistencia.h ----
 
 PersStatus pers_salvar_salas(const char *caminho, const Sala *v, size_t n) {
   if (caminho == NULL || (v == NULL && n > 0))
@@ -609,15 +608,15 @@ PersStatus pers_salvar_reservas(const char *caminho, const Reserva *v,
                                 size_t n) {
   if (caminho == NULL || (v == NULL && n > 0))
     return PERS_ERRO_PARAMETRO;
-  if (!vetor_valido(v, n, sizeof *v, reserva_valida_v, NULL))
+  if (!vetor_valido(v, n, sizeof *v, reserva_valida_v, reservas_duplicadas))
     return PERS_ERRO_DADO_INVALIDO;
   return gravar(caminho, CAB_RESERVAS, v, n, sizeof *v, escrever_reserva);
 }
 
 PersStatus pers_carregar_reservas(const char *caminho, Reserva **v, size_t *n,
                                   PersRelatorio *rel) {
-  return carregar(caminho, CAB_RESERVAS, sizeof(Reserva), ler_reserva, NULL,
-                  (void **)v, n, rel);
+  return carregar(caminho, CAB_RESERVAS, sizeof(Reserva), ler_reserva,
+                  reservas_duplicadas, (void **)v, n, rel);
 }
 
 void pers_liberar(void *vetor) { free(vetor); }
