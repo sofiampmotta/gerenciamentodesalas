@@ -30,6 +30,10 @@ typedef struct {
 static TelaNova *g_nova = NULL;
 
 static void estilo_nova(void) {
+  static gboolean carregado = FALSE;
+  if (carregado)
+    return;
+  carregado = TRUE;
   GtkCssProvider *css = gtk_css_provider_new();
   gtk_css_provider_load_from_string(
       css, ".painel-verif { border: 1px solid #e1e6ef; border-radius: 6px; "

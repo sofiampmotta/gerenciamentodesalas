@@ -28,6 +28,12 @@ typedef struct {
   GtkWidget *data, *tipo, *sala, *popover;
   GtkWidget *titulo_dia, *quadro, *ocupacao;
   GtkWidget *r_uso, *r_ocup, *r_conf, *r_salas;
+  int ult_n_salas;
+  int ult_n_reservas;
+  int ult_dia;
+  char ult_tipo[16];
+  char ult_sala[64];
+  gboolean renderizado;
 } TelaVisao;
 
 typedef struct {
@@ -42,6 +48,10 @@ typedef struct {
 } FaixaOc;
 
 static void estilo_visao(void) {
+  static gboolean carregado = FALSE;
+  if (carregado)
+    return;
+  carregado = TRUE;
   GtkCssProvider *css = gtk_css_provider_new();
   gtk_css_provider_load_from_string(
       css,
@@ -391,6 +401,9 @@ static void atualizar(TelaVisao *t) {
 }
 
 static void recarregar_salas(TelaVisao *t) {
+  if (t->renderizado && t->ult_n_salas == g_n_salas)
+    return;
+  t->ult_n_salas = g_n_salas;
   char antes[64] = "";
   guint sel = gtk_drop_down_get_selected(GTK_DROP_DOWN(t->sala));
   if (sel != GTK_INVALID_LIST_POSITION && sel > 0) {
@@ -420,9 +433,23 @@ static void recarregar_salas(TelaVisao *t) {
 }
 
 static void ao_mostrar(GtkWidget *w, gpointer dados) {
+  (void)w;
   TelaVisao *t = (TelaVisao *)dados;
+  Filtro f;
+  ler_filtro(t, &f);
+  if (t->renderizado && t->ult_n_salas == g_n_salas &&
+      t->ult_n_reservas == g_n_reservas && t->ult_dia == f.dia &&
+      strcmp(t->ult_tipo, f.tipo) == 0 && strcmp(t->ult_sala, f.sala) == 0)
+    return;
   recarregar_salas(t);
+  ler_filtro(t, &f);
   atualizar(t);
+  t->ult_n_salas = g_n_salas;
+  t->ult_n_reservas = g_n_reservas;
+  t->ult_dia = f.dia;
+  g_strlcpy(t->ult_tipo, f.tipo, sizeof t->ult_tipo);
+  g_strlcpy(t->ult_sala, f.sala, sizeof t->ult_sala);
+  t->renderizado = TRUE;
 }
 
 static void exportar(TelaVisao *t, const char *formato) {
@@ -446,6 +473,74 @@ static void ao_pdf(GtkButton *b, gpointer dados) {
 }
 static void ao_csv(GtkButton *b, gpointer dados) {
   exportar((TelaVisao *)dados, "csv");
+}
+
+static void executar_importacao_pdf(TelaVisao *t) {
+  acao_log("importar_pdf_grade_semestre");
+  /* Gancho para a Grazi ligar o leitor de PDF e atualizar a grade/reservas. */
+  interface_mensagem(
+      t->e,
+      "Importar PDF confirmado: gancho pronto para o leitor de PDF da Grazi.",
+      FALSE);
+}
+
+#if GTK_CHECK_VERSION(4, 10, 0)
+static void ao_resposta_alerta_pdf(GObject *source, GAsyncResult *res,
+                                  gpointer dados) {
+  GtkAlertDialog *dialog = GTK_ALERT_DIALOG(source);
+  TelaVisao *t = (TelaVisao *)dados;
+  GError *err = NULL;
+  int escolha = gtk_alert_dialog_choose_finish(dialog, res, &err);
+  if (err) {
+    g_error_free(err);
+    return;
+  }
+  if (escolha == 1) {
+    executar_importacao_pdf(t);
+  }
+}
+#else
+static void ao_resposta_dialog_pdf(GtkDialog *dialog, int response_id,
+                                   gpointer dados) {
+  TelaVisao *t = (TelaVisao *)dados;
+  gtk_window_destroy(GTK_WINDOW(dialog));
+  if (response_id == GTK_RESPONSE_ACCEPT) {
+    executar_importacao_pdf(t);
+  }
+}
+#endif
+
+static void ao_importar_pdf(GtkButton *b, gpointer dados) {
+  (void)b;
+  TelaVisao *t = (TelaVisao *)dados;
+  GtkWindow *janela =
+      (t->e && t->e->janela) ? GTK_WINDOW(t->e->janela) : NULL;
+
+  const char *titulo = "Importar PDF da grade do semestre";
+  const char *mensagem =
+      "Ao importar o PDF, o salvamento anterior poderá ser substituído ou "
+      "perdido. Deseja continuar?";
+
+#if GTK_CHECK_VERSION(4, 10, 0)
+  const char *botoes[] = {"Cancelar", "Continuar", NULL};
+  GtkAlertDialog *alerta = gtk_alert_dialog_new("%s", titulo);
+  gtk_alert_dialog_set_detail(alerta, mensagem);
+  gtk_alert_dialog_set_buttons(alerta, botoes);
+  gtk_alert_dialog_set_cancel_button(alerta, 0);
+  gtk_alert_dialog_set_default_button(alerta, 0);
+  gtk_alert_dialog_choose(alerta, janela, NULL, ao_resposta_alerta_pdf, t);
+  g_object_unref(alerta);
+#else
+  GtkWidget *dialog = gtk_message_dialog_new(
+      janela, GTK_DIALOG_MODAL | GTK_DIALOG_DESTROY_WITH_PARENT,
+      GTK_MESSAGE_WARNING, GTK_BUTTONS_NONE, "%s", titulo);
+  gtk_message_dialog_format_secondary_text(GTK_MESSAGE_DIALOG(dialog), "%s",
+                                           mensagem);
+  gtk_dialog_add_button(GTK_DIALOG(dialog), "Cancelar", GTK_RESPONSE_CANCEL);
+  gtk_dialog_add_button(GTK_DIALOG(dialog), "Continuar", GTK_RESPONSE_ACCEPT);
+  g_signal_connect(dialog, "response", G_CALLBACK(ao_resposta_dialog_pdf), t);
+  gtk_widget_show(dialog);
+#endif
 }
 
 static void ao_aplicar(GtkButton *b, gpointer dados) {
@@ -525,8 +620,14 @@ GtkWidget *tela_visao_criar(Estado *e) {
   gtk_popover_set_child(GTK_POPOVER(t->popover), op);
   gtk_menu_button_set_popover(GTK_MENU_BUTTON(menu), t->popover);
 
+  GtkWidget *btn_importar_pdf = gtk_button_new_with_label("Importar PDF");
+  gtk_widget_add_css_class(btn_importar_pdf, "secundario");
+  gtk_widget_set_valign(btn_importar_pdf, GTK_ALIGN_START);
+  g_signal_connect(btn_importar_pdf, "clicked", G_CALLBACK(ao_importar_pdf), t);
+
   gtk_box_append(GTK_BOX(topo), textos);
   gtk_box_append(GTK_BOX(topo), menu);
+  gtk_box_append(GTK_BOX(topo), btn_importar_pdf);
   gtk_box_append(GTK_BOX(pagina), topo);
 
   /* filtros */
