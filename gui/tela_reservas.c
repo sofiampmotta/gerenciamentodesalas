@@ -47,23 +47,33 @@ gtk_style_context_add_provider_for_display(
 g_object_unref(css);
 }
 
-static GtkWidget *celula(const char *texto, int largura) {
-GtkWidget *l = gtk_label_new(texto);
-gtk_label_set_xalign(GTK_LABEL(l), 0);
+static GtkWidget *celula(const char *texto, int largura, int max_chars) {
+GtkWidget *l = gtk_label_new(texto ? texto : "");
+gtk_label_set_xalign(GTK_LABEL(l), 0.0f);
+gtk_widget_set_halign(l, GTK_ALIGN_START);
+gtk_widget_set_valign(l, GTK_ALIGN_CENTER);
+gtk_widget_set_hexpand(l, FALSE);
+gtk_widget_set_vexpand(l, FALSE);
+gtk_label_set_single_line_mode(GTK_LABEL(l), TRUE);
 gtk_label_set_ellipsize(GTK_LABEL(l), PANGO_ELLIPSIZE_END);
+gtk_label_set_width_chars(GTK_LABEL(l), max_chars);
+gtk_label_set_max_width_chars(GTK_LABEL(l), max_chars);
 gtk_widget_set_size_request(l, largura, -1);
 return l;
 }
 
 static GtkWidget *linha(const char *a, const char *b, const char *c,
                     const char *d, const char *f, const char *g) {
-GtkWidget *caixa = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
-gtk_box_append(GTK_BOX(caixa), celula(a, 140));
-gtk_box_append(GTK_BOX(caixa), celula(b, 120));
-gtk_box_append(GTK_BOX(caixa), celula(c, 230));
-gtk_box_append(GTK_BOX(caixa), celula(d, 100));
-gtk_box_append(GTK_BOX(caixa), celula(f, 100));
-gtk_box_append(GTK_BOX(caixa), celula(g, 160));
+GtkWidget *caixa = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 12);
+gtk_widget_set_hexpand(caixa, FALSE);
+
+const char *textos[6] = {a, b, c, d, f, g};
+const int larguras[6] = {130, 125, 300, 95, 85, 220};
+const int max_chars[6] = {16, 15, 36, 11, 10, 28};
+
+for (int i = 0; i < 6; i++) {
+  gtk_box_append(GTK_BOX(caixa), celula(textos[i], larguras[i], max_chars[i]));
+}
 return caixa;
 }
 
