@@ -29,6 +29,10 @@ typedef struct {
 } Faixa;
 
 static void estilo_busca(void) {
+  static gboolean carregado = FALSE;
+  if (carregado)
+    return;
+  carregado = TRUE;
   GtkCssProvider *css = gtk_css_provider_new();
   gtk_css_provider_load_from_string(
       css, ".form-busca { border: 1px solid #e1e6ef; border-radius: 6px; "

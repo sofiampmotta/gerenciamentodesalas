@@ -42,7 +42,10 @@ static void ao_menu(GtkToggleButton *b, gpointer dados) {
   Estado *e = (Estado *)dados;
   if (gtk_toggle_button_get_active(b)) {
     const char *nome = g_object_get_data(G_OBJECT(b), "tela");
-    gtk_stack_set_visible_child_name(GTK_STACK(e->stack), nome);
+    const char *atual = gtk_stack_get_visible_child_name(GTK_STACK(e->stack));
+    if (nome && (!atual || strcmp(atual, nome) != 0)) {
+      gtk_stack_set_visible_child_name(GTK_STACK(e->stack), nome);
+    }
   }
 }
 
@@ -166,6 +169,8 @@ static void ativar(GtkApplication *app, gpointer dados) {
   gtk_window_set_default_size(GTK_WINDOW(e->janela), 1024, 650);
 
   e->stack = gtk_stack_new();
+  gtk_stack_set_transition_type(GTK_STACK(e->stack), GTK_STACK_TRANSITION_TYPE_NONE);
+  gtk_stack_set_transition_duration(GTK_STACK(e->stack), 0);
   gtk_stack_set_hhomogeneous(GTK_STACK(e->stack), FALSE);
   gtk_stack_set_vhomogeneous(GTK_STACK(e->stack), FALSE);
   gtk_widget_set_hexpand(e->stack, TRUE);

@@ -17,6 +17,10 @@ typedef struct {
 } TelaSalas;
 
 static void aplicar_estilo(void) {
+  static gboolean carregado = FALSE;
+  if (carregado)
+    return;
+  carregado = TRUE;
   GtkCssProvider *css = gtk_css_provider_new();
   gtk_css_provider_load_from_string(
       css, ".cabecalho-tabela { padding: 0 16px; }"
