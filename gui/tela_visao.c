@@ -28,6 +28,7 @@ typedef struct {
   GtkWidget *data, *tipo, *sala, *popover;
   GtkWidget *titulo_dia, *quadro, *ocupacao;
   GtkWidget *r_uso, *r_ocup, *r_conf, *r_salas;
+  GtkWidget *btn_conf_toggle, *revealer_conf, *lista_conf;
   int ult_n_salas;
   int ult_n_reservas;
   int ult_dia;
@@ -319,8 +320,18 @@ static void definir(GtkWidget *l, int n, const char *resto) {
   g_free(m);
 }
 
+static void ao_toggle_conf(GtkToggleButton *btn, gpointer dados) {
+  TelaVisao *t = (TelaVisao *)dados;
+  gboolean ativo = gtk_toggle_button_get_active(btn);
+  gtk_button_set_label(GTK_BUTTON(btn), ativo ? "▾" : "▸");
+  if (t->revealer_conf)
+    gtk_revealer_set_reveal_child(GTK_REVEALER(t->revealer_conf), ativo);
+}
+
 static void resumo(TelaVisao *t, int dia) {
   int ocup = 0, conflitos = 0, uso = 0;
+  if (t->lista_conf)
+    limpar(t->lista_conf);
   GDateTime *agora = g_date_time_new_now_local();
   int hoje = g_date_time_get_year(agora) * 10000 +
              g_date_time_get_month(agora) * 100 +
@@ -337,8 +348,32 @@ static void resumo(TelaVisao *t, int dia) {
           strcmp(g_reservas[i].sala, g_reservas[j].sala) != 0)
         continue;
       if (g_reservas[i].ini < g_reservas[j].fim &&
-          g_reservas[j].ini < g_reservas[i].fim)
+          g_reservas[j].ini < g_reservas[i].fim) {
         conflitos++;
+        if (t->lista_conf) {
+          int c_ini = g_reservas[i].ini > g_reservas[j].ini ? g_reservas[i].ini : g_reservas[j].ini;
+          int c_fim = g_reservas[i].fim < g_reservas[j].fim ? g_reservas[i].fim : g_reservas[j].fim;
+          char h1[16], h2[16], c1[16], c2[16];
+          dados_hora_texto(c_ini, c1, sizeof c1);
+          dados_hora_texto(c_fim, c2, sizeof c2);
+          dados_hora_texto(g_reservas[i].ini, h1, sizeof h1);
+          dados_hora_texto(g_reservas[j].ini, h2, sizeof h2);
+
+          char *det = g_markup_printf_escaped(
+              "<b>%s</b> (%s–%s)\n• %s (%s)\n• %s (%s)",
+              g_reservas[i].sala, c1, c2,
+              g_reservas[i].atividade, h1,
+              g_reservas[j].atividade, h2);
+          GtkWidget *item = gtk_label_new(NULL);
+          gtk_label_set_markup(GTK_LABEL(item), det);
+          gtk_label_set_xalign(GTK_LABEL(item), 0);
+          gtk_label_set_wrap(GTK_LABEL(item), TRUE);
+          gtk_widget_set_margin_top(item, 4);
+          gtk_widget_set_margin_bottom(item, 4);
+          gtk_box_append(GTK_BOX(t->lista_conf), item);
+          g_free(det);
+        }
+      }
     }
   }
   for (int s = 0; s < g_n_salas; s++) {
@@ -360,6 +395,18 @@ static void resumo(TelaVisao *t, int dia) {
                             : "salas com ocupação no dia");
   definir(t->r_ocup, ocup, ocup == 1 ? "ocupação no dia" : "ocupações no dia");
   definir(t->r_conf, conflitos, conflitos == 1 ? "conflito" : "conflitos");
+  if (t->btn_conf_toggle) {
+    gtk_widget_set_sensitive(t->btn_conf_toggle, conflitos > 0);
+    if (conflitos == 0 && gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(t->btn_conf_toggle))) {
+      gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(t->btn_conf_toggle), FALSE);
+    }
+  }
+  if (t->lista_conf && conflitos == 0) {
+    GtkWidget *vazio = gtk_label_new("Nenhum conflito neste dia.");
+    gtk_label_set_xalign(GTK_LABEL(vazio), 0);
+    gtk_widget_add_css_class(vazio, "subtitulo");
+    gtk_box_append(GTK_BOX(t->lista_conf), vazio);
+  }
   definir(t->r_salas, g_n_salas, "salas cadastradas");
 }
 
@@ -621,7 +668,7 @@ GtkWidget *tela_visao_criar(Estado *e) {
   gtk_menu_button_set_popover(GTK_MENU_BUTTON(menu), t->popover);
 
   GtkWidget *btn_importar_pdf = gtk_button_new_with_label("Importar PDF");
-  gtk_widget_add_css_class(btn_importar_pdf, "secundario");
+  gtk_widget_add_css_class(btn_importar_pdf, "primario");
   gtk_widget_set_valign(btn_importar_pdf, GTK_ALIGN_START);
   g_signal_connect(btn_importar_pdf, "clicked", G_CALLBACK(ao_importar_pdf), t);
 
@@ -640,7 +687,7 @@ GtkWidget *tela_visao_criar(Estado *e) {
   GtkWidget *filtros = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 18);
   gtk_widget_add_css_class(filtros, "card-visao");
   GtkWidget *b_aplicar = gtk_button_new_with_label("Aplicar filtros");
-  gtk_widget_add_css_class(b_aplicar, "primario");
+  gtk_widget_add_css_class(b_aplicar, "secundario");
   gtk_widget_set_valign(b_aplicar, GTK_ALIGN_END);
   g_signal_connect(b_aplicar, "clicked", G_CALLBACK(ao_aplicar), t);
   gtk_box_append(GTK_BOX(filtros), coluna_filtro("Dia", t->data));
@@ -681,8 +728,32 @@ GtkWidget *tela_visao_criar(Estado *e) {
   t->r_salas = rotulo("", 0, TRUE, FALSE);
   GtkWidget *lin[4] = {t->r_uso, t->r_ocup, t->r_conf, t->r_salas};
   for (int i = 0; i < 4; i++) {
-    gtk_widget_add_css_class(lin[i], "resumo-linha");
-    gtk_box_append(GTK_BOX(c_res), lin[i]);
+    if (lin[i] == t->r_conf) {
+      GtkWidget *linha_c = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
+      gtk_widget_set_hexpand(t->r_conf, TRUE);
+      gtk_widget_add_css_class(t->r_conf, "resumo-linha");
+      t->btn_conf_toggle = gtk_toggle_button_new_with_label("▸");
+      gtk_widget_add_css_class(t->btn_conf_toggle, "flat");
+      gtk_widget_set_valign(t->btn_conf_toggle, GTK_ALIGN_CENTER);
+      g_signal_connect(t->btn_conf_toggle, "toggled", G_CALLBACK(ao_toggle_conf), t);
+      gtk_box_append(GTK_BOX(linha_c), t->r_conf);
+      gtk_box_append(GTK_BOX(linha_c), t->btn_conf_toggle);
+      gtk_box_append(GTK_BOX(c_res), linha_c);
+
+      t->lista_conf = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
+      gtk_widget_set_margin_start(t->lista_conf, 8);
+      gtk_widget_set_margin_top(t->lista_conf, 4);
+      gtk_widget_set_margin_bottom(t->lista_conf, 4);
+
+      t->revealer_conf = gtk_revealer_new();
+      gtk_revealer_set_transition_type(GTK_REVEALER(t->revealer_conf),
+                                       GTK_REVEALER_TRANSITION_TYPE_SLIDE_DOWN);
+      gtk_revealer_set_child(GTK_REVEALER(t->revealer_conf), t->lista_conf);
+      gtk_box_append(GTK_BOX(c_res), t->revealer_conf);
+    } else {
+      gtk_widget_add_css_class(lin[i], "resumo-linha");
+      gtk_box_append(GTK_BOX(c_res), lin[i]);
+    }
   }
   gtk_box_append(GTK_BOX(dir), c_res);
 
