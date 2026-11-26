@@ -1,5 +1,5 @@
-#include "interface.h"
 #include "../include/aplicacao.h"
+#include "interface.h"
 #include <string.h>
 
 typedef struct {
@@ -165,8 +165,7 @@ static void ao_salvar(GtkButton *b, gpointer dados) {
       }
     }
     if (!erro && t->selecionado >= 0) {
-      existente =
-          aplicacao_buscar_sala(app, g_salas[t->selecionado].id);
+      existente = aplicacao_buscar_sala(app, g_salas[t->selecionado].id);
       if (existente == NULL)
         erro = g_strdup("A sala selecionada não foi encontrada nos dados.");
     }

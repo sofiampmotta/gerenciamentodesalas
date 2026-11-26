@@ -1,7 +1,8 @@
+#include "../include/exportacao.h"
+#include "../include/leitor_pdf.h"
 #include "interface.h"
 #include <stdlib.h>
 #include <string.h>
-#include "../include/leitor_pdf.h"
 
 #define COL_HORA 110
 #define COL_ATIV 160
@@ -21,11 +22,10 @@ static const char *DIAS[] = {"",
                              "Sábado",
                              "Domingo"};
 static const char *MESES[] = {
-    "", "janeiro", "fevereiro", "março", "abril", "maio", "junho",
-    "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"};
+    "",      "janeiro", "fevereiro", "março",   "abril",    "maio",    "junho",
+    "julho", "agosto",  "setembro",  "outubro", "novembro", "dezembro"};
 
-typedef struct
-{
+typedef struct {
   Estado *e;
   GtkWidget *data, *tipo, *sala, *popover;
   GtkWidget *titulo_dia, *quadro, *ocupacao;
@@ -39,21 +39,28 @@ typedef struct
   gboolean renderizado;
 } TelaVisao;
 
-typedef struct
-{
+typedef struct {
   int dia;
   char tipo[16];
   char sala[64];
 } Filtro;
-typedef struct
-{
+typedef struct {
   char sala[64];
   char tipo[16];
   int dia;
 } FaixaOc;
 
-static void estilo_visao(void)
-{
+typedef struct {
+  TelaVisao *tela;
+  ReservaExportacao *reservas;
+  size_t quantidade;
+  int dia;
+  char tipo[16];
+  char sala[64];
+  gboolean pdf;
+} ExportacaoPendente;
+
+static void estilo_visao(void) {
   static gboolean carregado = FALSE;
   if (carregado)
     return;
@@ -81,8 +88,7 @@ static void estilo_visao(void)
 }
 
 static GtkWidget *rotulo(const char *txt, int largura, gboolean expande,
-                         gboolean negrito)
-{
+                         gboolean negrito) {
   GtkWidget *l = gtk_label_new(txt);
   gtk_label_set_xalign(GTK_LABEL(l), 0);
   gtk_label_set_ellipsize(GTK_LABEL(l), PANGO_ELLIPSIZE_END);
@@ -96,15 +102,13 @@ static GtkWidget *rotulo(const char *txt, int largura, gboolean expande,
   return l;
 }
 
-static void limpar(GtkWidget *caixa)
-{
+static void limpar(GtkWidget *caixa) {
   GtkWidget *f;
   while ((f = gtk_widget_get_first_child(caixa)) != NULL)
     gtk_box_remove(GTK_BOX(caixa), f);
 }
 
-static const char *classe_chip(const char *tipo)
-{
+static const char *classe_chip(const char *tipo) {
   if (strcmp(tipo, "Monitoria") == 0)
     return "chip-monitoria";
   if (strcmp(tipo, "Extensão") == 0)
@@ -114,8 +118,7 @@ static const char *classe_chip(const char *tipo)
   return NULL;
 }
 
-static int passa(const ReservaVista *r, const Filtro *f)
-{
+static int passa(const ReservaVista *r, const Filtro *f) {
   if (!dados_reserva_ocorre_em(r, f->dia))
     return 0;
   if (f->tipo[0] && strcmp(r->tipo, f->tipo) != 0)
@@ -125,8 +128,7 @@ static int passa(const ReservaVista *r, const Filtro *f)
   return 1;
 }
 
-static int comparar(const void *pa, const void *pb)
-{
+static int comparar(const void *pa, const void *pb) {
   const ReservaVista *x = &g_reservas[*(const int *)pa];
   const ReservaVista *y = &g_reservas[*(const int *)pb];
   if (x->ini != y->ini)
@@ -136,8 +138,7 @@ static int comparar(const void *pa, const void *pb)
   return strcmp(x->sala, y->sala);
 }
 
-static GtkWidget *linha_reserva(const ReservaVista *r)
-{
+static GtkWidget *linha_reserva(const ReservaVista *r) {
   GtkWidget *linha = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
   gtk_widget_add_css_class(linha, "linha-quadro");
 
@@ -146,8 +147,7 @@ static GtkWidget *linha_reserva(const ReservaVista *r)
   gtk_widget_set_size_request(ativ, COL_ATIV, -1);
   gtk_box_append(GTK_BOX(ativ), rotulo(r->atividade, 0, FALSE, TRUE));
   const char *classe = classe_chip(r->tipo);
-  if (classe)
-  {
+  if (classe) {
     GtkWidget *chip = gtk_label_new(r->tipo);
     gtk_widget_add_css_class(chip, "chip");
     gtk_widget_add_css_class(chip, classe);
@@ -161,8 +161,7 @@ static GtkWidget *linha_reserva(const ReservaVista *r)
   return linha;
 }
 
-static GtkWidget *cabecalho(void)
-{
+static GtkWidget *cabecalho(void) {
   GtkWidget *c = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
   gtk_widget_add_css_class(c, "cab-quadro");
   GtkWidget *h = gtk_label_new("Horário");
@@ -176,8 +175,7 @@ static GtkWidget *cabecalho(void)
   return c;
 }
 
-static void montar_quadro(TelaVisao *t, const Filtro *f)
-{
+static void montar_quadro(TelaVisao *t, const Filtro *f) {
   limpar(t->quadro);
   int *idx = g_new(int, g_n_reservas);
   int n = 0;
@@ -186,8 +184,7 @@ static void montar_quadro(TelaVisao *t, const Filtro *f)
       idx[n++] = i;
   qsort(idx, n, sizeof(int), comparar);
 
-  if (n == 0)
-  {
+  if (n == 0) {
     GtkWidget *l = gtk_label_new("Nenhuma ocupação para esses filtros.");
     gtk_widget_add_css_class(l, "subtitulo");
     gtk_label_set_xalign(GTK_LABEL(l), 0);
@@ -198,8 +195,7 @@ static void montar_quadro(TelaVisao *t, const Filtro *f)
   }
 
   int k = 0;
-  while (k < n)
-  {
+  while (k < n) {
     const ReservaVista *p = &g_reservas[idx[k]];
     int j = k;
     while (j < n && g_reservas[idx[j]].ini == p->ini &&
@@ -228,8 +224,7 @@ static void montar_quadro(TelaVisao *t, const Filtro *f)
   g_free(idx);
 }
 
-static double px(int min, int w)
-{
+static double px(int min, int w) {
   double x = (min - FAIXA_INI) * (double)w / FAIXA_TOT;
   if (x < 0)
     x = 0;
@@ -239,8 +234,7 @@ static double px(int min, int w)
 }
 
 static void desenhar_oc(GtkDrawingArea *area, cairo_t *cr, int w, int h,
-                        gpointer dados)
-{
+                        gpointer dados) {
   const FaixaOc *f = (const FaixaOc *)dados;
   int barra = h - 14;
 
@@ -249,11 +243,9 @@ static void desenhar_oc(GtkDrawingArea *area, cairo_t *cr, int w, int h,
   cairo_fill(cr);
 
   cairo_set_source_rgb(cr, 0.62, 0.11, 0.14);
-  for (int i = 0; i < g_n_reservas; i++)
-  {
+  for (int i = 0; i < g_n_reservas; i++) {
     const ReservaVista *o = &g_reservas[i];
-    if (!dados_reserva_ocorre_em(o, f->dia) ||
-        strcmp(o->sala, f->sala) != 0)
+    if (!dados_reserva_ocorre_em(o, f->dia) || strcmp(o->sala, f->sala) != 0)
       continue;
     if (f->tipo[0] && strcmp(o->tipo, f->tipo) != 0)
       continue;
@@ -267,8 +259,7 @@ static void desenhar_oc(GtkDrawingArea *area, cairo_t *cr, int w, int h,
                          CAIRO_FONT_WEIGHT_BOLD);
   cairo_set_font_size(cr, 13);
   int marcas[4] = {8, 12, 16, 20};
-  for (int i = 0; i < 4; i++)
-  {
+  for (int i = 0; i < 4; i++) {
     char txt[8];
     g_snprintf(txt, sizeof txt, "%dh", marcas[i]);
     cairo_move_to(cr, px(marcas[i] * 60, w), h - 2);
@@ -276,21 +267,17 @@ static void desenhar_oc(GtkDrawingArea *area, cairo_t *cr, int w, int h,
   }
 }
 
-static void montar_ocupacao(TelaVisao *t, const Filtro *f)
-{
+static void montar_ocupacao(TelaVisao *t, const Filtro *f) {
   limpar(t->ocupacao);
-  for (int s = 0; s < g_n_salas; s++)
-  {
+  for (int s = 0; s < g_n_salas; s++) {
     const SalaVista *sl = &g_salas[s];
     if (f->sala[0] && strcmp(sl->nome, f->sala) != 0)
       continue;
 
     int n = 0;
-    for (int i = 0; i < g_n_reservas; i++)
-    {
+    for (int i = 0; i < g_n_reservas; i++) {
       const ReservaVista *r = &g_reservas[i];
-      if (!dados_reserva_ocorre_em(r, f->dia) ||
-          strcmp(r->sala, sl->nome) != 0)
+      if (!dados_reserva_ocorre_em(r, f->dia) || strcmp(r->sala, sl->nome) != 0)
         continue;
       if (f->tipo[0] && strcmp(r->tipo, f->tipo) != 0)
         continue;
@@ -337,15 +324,13 @@ static void montar_ocupacao(TelaVisao *t, const Filtro *f)
   }
 }
 
-static void definir(GtkWidget *l, int n, const char *resto)
-{
+static void definir(GtkWidget *l, int n, const char *resto) {
   char *m = g_markup_printf_escaped("<b>%d</b> %s", n, resto);
   gtk_label_set_markup(GTK_LABEL(l), m);
   g_free(m);
 }
 
-static void ao_toggle_conf(GtkToggleButton *btn, gpointer dados)
-{
+static void ao_toggle_conf(GtkToggleButton *btn, gpointer dados) {
   TelaVisao *t = (TelaVisao *)dados;
   gboolean ativo = gtk_toggle_button_get_active(btn);
   gtk_button_set_label(GTK_BUTTON(btn), ativo ? "▾" : "▸");
@@ -353,8 +338,7 @@ static void ao_toggle_conf(GtkToggleButton *btn, gpointer dados)
     gtk_revealer_set_reveal_child(GTK_REVEALER(t->revealer_conf), ativo);
 }
 
-static void resumo(TelaVisao *t, int dia)
-{
+static void resumo(TelaVisao *t, int dia) {
   int ocup = 0, conflitos = 0, uso = 0;
   if (t->lista_conf)
     limpar(t->lista_conf);
@@ -365,24 +349,22 @@ static void resumo(TelaVisao *t, int dia)
   int minuto_atual =
       g_date_time_get_hour(agora) * 60 + g_date_time_get_minute(agora);
   g_date_time_unref(agora);
-  for (int i = 0; i < g_n_reservas; i++)
-  {
+  for (int i = 0; i < g_n_reservas; i++) {
     if (!dados_reserva_ocorre_em(&g_reservas[i], dia))
       continue;
     ocup++;
-    for (int j = i + 1; j < g_n_reservas; j++)
-    {
+    for (int j = i + 1; j < g_n_reservas; j++) {
       if (!dados_reserva_ocorre_em(&g_reservas[j], dia) ||
           strcmp(g_reservas[i].sala, g_reservas[j].sala) != 0)
         continue;
       if (g_reservas[i].ini < g_reservas[j].fim &&
-          g_reservas[j].ini < g_reservas[i].fim)
-      {
+          g_reservas[j].ini < g_reservas[i].fim) {
         conflitos++;
-        if (t->lista_conf)
-        {
-          int c_ini = g_reservas[i].ini > g_reservas[j].ini ? g_reservas[i].ini : g_reservas[j].ini;
-          int c_fim = g_reservas[i].fim < g_reservas[j].fim ? g_reservas[i].fim : g_reservas[j].fim;
+        if (t->lista_conf) {
+          int c_ini = g_reservas[i].ini > g_reservas[j].ini ? g_reservas[i].ini
+                                                            : g_reservas[j].ini;
+          int c_fim = g_reservas[i].fim < g_reservas[j].fim ? g_reservas[i].fim
+                                                            : g_reservas[j].fim;
           char h1[16], h2[16], c1[16], c2[16];
           dados_hora_texto(c_ini, c1, sizeof c1);
           dados_hora_texto(c_fim, c2, sizeof c2);
@@ -390,10 +372,8 @@ static void resumo(TelaVisao *t, int dia)
           dados_hora_texto(g_reservas[j].ini, h2, sizeof h2);
 
           char *det = g_markup_printf_escaped(
-              "<b>%s</b> (%s–%s)\n• %s (%s)\n• %s (%s)",
-              g_reservas[i].sala, c1, c2,
-              g_reservas[i].atividade, h1,
-              g_reservas[j].atividade, h2);
+              "<b>%s</b> (%s–%s)\n• %s (%s)\n• %s (%s)", g_reservas[i].sala, c1,
+              c2, g_reservas[i].atividade, h1, g_reservas[j].atividade, h2);
           GtkWidget *item = gtk_label_new(NULL);
           gtk_label_set_markup(GTK_LABEL(item), det);
           gtk_label_set_xalign(GTK_LABEL(item), 0);
@@ -406,11 +386,9 @@ static void resumo(TelaVisao *t, int dia)
       }
     }
   }
-  for (int s = 0; s < g_n_salas; s++)
-  {
+  for (int s = 0; s < g_n_salas; s++) {
     int em_uso = 0, no_dia = 0;
-    for (int i = 0; i < g_n_reservas; i++)
-    {
+    for (int i = 0; i < g_n_reservas; i++) {
       const ReservaVista *r = &g_reservas[i];
       if (!dados_reserva_ocorre_em(r, dia) ||
           strcmp(r->sala, g_salas[s].nome) != 0)
@@ -423,20 +401,18 @@ static void resumo(TelaVisao *t, int dia)
       uso++;
   }
   definir(t->r_uso, uso,
-          dia == hoje ? "salas em uso agora"
-                      : "salas com ocupação no dia");
+          dia == hoje ? "salas em uso agora" : "salas com ocupação no dia");
   definir(t->r_ocup, ocup, ocup == 1 ? "ocupação no dia" : "ocupações no dia");
   definir(t->r_conf, conflitos, conflitos == 1 ? "conflito" : "conflitos");
-  if (t->btn_conf_toggle)
-  {
+  if (t->btn_conf_toggle) {
     gtk_widget_set_sensitive(t->btn_conf_toggle, conflitos > 0);
-    if (conflitos == 0 && gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(t->btn_conf_toggle)))
-    {
-      gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(t->btn_conf_toggle), FALSE);
+    if (conflitos == 0 &&
+        gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(t->btn_conf_toggle))) {
+      gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(t->btn_conf_toggle),
+                                   FALSE);
     }
   }
-  if (t->lista_conf && conflitos == 0)
-  {
+  if (t->lista_conf && conflitos == 0) {
     GtkWidget *vazio = gtk_label_new("Nenhum conflito neste dia.");
     gtk_label_set_xalign(GTK_LABEL(vazio), 0);
     gtk_widget_add_css_class(vazio, "subtitulo");
@@ -445,8 +421,7 @@ static void resumo(TelaVisao *t, int dia)
   definir(t->r_salas, g_n_salas, "salas cadastradas");
 }
 
-static void ler_filtro(TelaVisao *t, Filtro *f)
-{
+static void ler_filtro(TelaVisao *t, Filtro *f) {
   f->dia = seletor_data_get(t->data);
 
   guint i = gtk_drop_down_get_selected(GTK_DROP_DOWN(t->tipo));
@@ -456,8 +431,7 @@ static void ler_filtro(TelaVisao *t, Filtro *f)
 
   guint s = gtk_drop_down_get_selected(GTK_DROP_DOWN(t->sala));
   f->sala[0] = '\0';
-  if (s != GTK_INVALID_LIST_POSITION && s > 0)
-  {
+  if (s != GTK_INVALID_LIST_POSITION && s > 0) {
     GObject *it = gtk_drop_down_get_selected_item(GTK_DROP_DOWN(t->sala));
     if (it)
       g_strlcpy(f->sala, gtk_string_object_get_string(GTK_STRING_OBJECT(it)),
@@ -465,8 +439,28 @@ static void ler_filtro(TelaVisao *t, Filtro *f)
   }
 }
 
-static void atualizar(TelaVisao *t)
-{
+static void registrar_filtro_renderizado(TelaVisao *t) {
+  Filtro f;
+  ler_filtro(t, &f);
+  t->ult_n_salas = g_n_salas;
+  t->ult_n_reservas = g_n_reservas;
+  t->ult_dia = f.dia;
+  g_strlcpy(t->ult_tipo, f.tipo, sizeof t->ult_tipo);
+  g_strlcpy(t->ult_sala, f.sala, sizeof t->ult_sala);
+  t->renderizado = TRUE;
+}
+
+static void filtro_renderizado(TelaVisao *t, Filtro *f) {
+  if (!t->renderizado) {
+    ler_filtro(t, f);
+    return;
+  }
+  f->dia = t->ult_dia;
+  g_strlcpy(f->tipo, t->ult_tipo, sizeof f->tipo);
+  g_strlcpy(f->sala, t->ult_sala, sizeof f->sala);
+}
+
+static void atualizar(TelaVisao *t) {
   Filtro f;
   ler_filtro(t, &f);
   if (!dados_data_valida(f.dia))
@@ -485,15 +479,13 @@ static void atualizar(TelaVisao *t)
   resumo(t, f.dia);
 }
 
-static void recarregar_salas(TelaVisao *t)
-{
+static void recarregar_salas(TelaVisao *t) {
   if (t->renderizado && t->ult_n_salas == g_n_salas)
     return;
   t->ult_n_salas = g_n_salas;
   char antes[64] = "";
   guint sel = gtk_drop_down_get_selected(GTK_DROP_DOWN(t->sala));
-  if (sel != GTK_INVALID_LIST_POSITION && sel > 0)
-  {
+  if (sel != GTK_INVALID_LIST_POSITION && sel > 0) {
     GObject *it = gtk_drop_down_get_selected_item(GTK_DROP_DOWN(t->sala));
     if (it)
       g_strlcpy(antes, gtk_string_object_get_string(GTK_STRING_OBJECT(it)),
@@ -519,8 +511,7 @@ static void recarregar_salas(TelaVisao *t)
   gtk_drop_down_set_selected(GTK_DROP_DOWN(t->sala), pos);
 }
 
-static void ao_mostrar(GtkWidget *w, gpointer dados)
-{
+static void ao_mostrar(GtkWidget *w, gpointer dados) {
   (void)w;
   TelaVisao *t = (TelaVisao *)dados;
   Filtro f;
@@ -530,113 +521,205 @@ static void ao_mostrar(GtkWidget *w, gpointer dados)
       strcmp(t->ult_tipo, f.tipo) == 0 && strcmp(t->ult_sala, f.sala) == 0)
     return;
   recarregar_salas(t);
-  ler_filtro(t, &f);
   atualizar(t);
-  t->ult_n_salas = g_n_salas;
-  t->ult_n_reservas = g_n_reservas;
-  t->ult_dia = f.dia;
-  g_strlcpy(t->ult_tipo, f.tipo, sizeof t->ult_tipo);
-  g_strlcpy(t->ult_sala, f.sala, sizeof t->ult_sala);
-  t->renderizado = TRUE;
+  registrar_filtro_renderizado(t);
 }
 
-static void exportar(TelaVisao *t, const char *formato)
-{
+static int comparar_exportacao(const void *pa, const void *pb) {
+  const ReservaExportacao *a = pa;
+  const ReservaExportacao *b = pb;
+  if (a->inicio != b->inicio)
+    return a->inicio - b->inicio;
+  if (a->fim != b->fim)
+    return a->fim - b->fim;
+  return strcmp(a->sala, b->sala);
+}
+
+static char *caminho_com_extensao(const char *caminho, const char *extensao) {
+  size_t tamanho = strlen(caminho);
+  size_t tamanhoExtensao = strlen(extensao);
+  if (tamanho >= tamanhoExtensao &&
+      g_ascii_strcasecmp(caminho + tamanho - tamanhoExtensao, extensao) == 0)
+    return g_strdup(caminho);
+
+  char *diretorio = g_path_get_dirname(caminho);
+  char *base = g_path_get_basename(caminho);
+  char *ponto = strrchr(base, '.');
+  if (ponto)
+    *ponto = '\0';
+  char *novoNome = g_strconcat(base, extensao, NULL);
+  char *resultado = g_build_filename(diretorio, novoNome, NULL);
+  g_free(diretorio);
+  g_free(base);
+  g_free(novoNome);
+  return resultado;
+}
+
+static void liberar_exportacao(ExportacaoPendente *pendente) {
+  g_free(pendente->reservas);
+  g_free(pendente);
+}
+
+static void ao_salvar_exportacao(GtkNativeDialog *dialog, int resposta,
+                                 gpointer dados) {
+  ExportacaoPendente *pendente = dados;
+  if (resposta == GTK_RESPONSE_ACCEPT) {
+    GFile *arquivo = gtk_file_chooser_get_file(GTK_FILE_CHOOSER(dialog));
+    char *caminho = arquivo ? g_file_get_path(arquivo) : NULL;
+    if (!caminho) {
+      interface_mensagem(pendente->tela->e,
+                         "Não foi possível obter o caminho do arquivo.", TRUE);
+    } else {
+      const char *extensao = pendente->pdf ? ".pdf" : ".csv";
+      char *destino = caminho_com_extensao(caminho, extensao);
+      int sucesso =
+          pendente->pdf
+              ? exportar_pdf(destino, pendente->dia,
+                             pendente->tipo[0] ? pendente->tipo : NULL,
+                             pendente->sala[0] ? pendente->sala : NULL,
+                             pendente->reservas, pendente->quantidade)
+              : exportar_csv(destino, pendente->dia,
+                             pendente->tipo[0] ? pendente->tipo : NULL,
+                             pendente->sala[0] ? pendente->sala : NULL,
+                             pendente->reservas, pendente->quantidade);
+      if (sucesso) {
+        char *mensagem = g_strdup_printf("Arquivo exportado: %s", destino);
+        interface_mensagem(pendente->tela->e, mensagem, FALSE);
+        g_free(mensagem);
+      } else {
+        char *mensagem =
+            g_strdup_printf("Não foi possível exportar o arquivo: %s", destino);
+        interface_mensagem(pendente->tela->e, mensagem, TRUE);
+        g_free(mensagem);
+      }
+      g_free(destino);
+      g_free(caminho);
+    }
+    if (arquivo)
+      g_object_unref(arquivo);
+  }
+
+  gtk_native_dialog_destroy(GTK_NATIVE_DIALOG(dialog));
+  g_object_unref(dialog);
+  liberar_exportacao(pendente);
+}
+
+static void exportar(TelaVisao *t, gboolean pdf) {
   Filtro f;
-  ler_filtro(t, &f);
-  acao_log("exportar_%s dia:%d tipo:%s sala:%s", formato, f.dia,
+  filtro_renderizado(t, &f);
+  if (!dados_data_valida(f.dia)) {
+    interface_mensagem(t->e, "A data exibida não é válida.", TRUE);
+    return;
+  }
+
+  ExportacaoPendente *pendente = g_new0(ExportacaoPendente, 1);
+  pendente->tela = t;
+  pendente->dia = f.dia;
+  pendente->pdf = pdf;
+  g_strlcpy(pendente->tipo, f.tipo, sizeof pendente->tipo);
+  g_strlcpy(pendente->sala, f.sala, sizeof pendente->sala);
+  pendente->reservas = g_new0(ReservaExportacao, g_n_reservas);
+
+  for (int i = 0; i < g_n_reservas; i++) {
+    const ReservaVista *r = &g_reservas[i];
+    if (!passa(r, &f))
+      continue;
+    ReservaExportacao *saida = &pendente->reservas[pendente->quantidade++];
+    g_strlcpy(saida->atividade, r->atividade, sizeof saida->atividade);
+    g_strlcpy(saida->tipo, r->tipo, sizeof saida->tipo);
+    g_strlcpy(saida->responsavel, r->responsavel, sizeof saida->responsavel);
+    g_strlcpy(saida->sala, r->sala, sizeof saida->sala);
+    saida->inicio = r->ini;
+    saida->fim = r->fim;
+    saida->recorrente = r->isRecorrente;
+  }
+  if (pendente->quantidade > 1)
+    qsort(pendente->reservas, pendente->quantidade, sizeof *pendente->reservas,
+          comparar_exportacao);
+
+  acao_log("exportar_%s dia:%d tipo:%s sala:%s", pdf ? "pdf" : "csv", f.dia,
            f.tipo[0] ? f.tipo : "(todas)", f.sala[0] ? f.sala : "(todas)");
-  char *up = g_ascii_strup(formato, -1);
-  char *msg = g_strdup_printf("Exportar %s: parâmetros impressos no terminal "
-                              "(função do backend ainda não ligada).",
-                              up);
-  interface_mensagem(t->e, msg, FALSE);
-  g_free(up);
-  g_free(msg);
   if (t->popover)
     gtk_popover_popdown(GTK_POPOVER(t->popover));
+
+  char nome[64];
+  g_snprintf(nome, sizeof nome, "quadro-%04d-%02d-%02d.%s", f.dia / 10000,
+             f.dia / 100 % 100, f.dia % 100, pdf ? "pdf" : "csv");
+  GtkFileChooserNative *seletor = gtk_file_chooser_native_new(
+      pdf ? "Exportar quadro para PDF" : "Exportar quadro para CSV",
+      (t->e && t->e->janela) ? GTK_WINDOW(t->e->janela) : NULL,
+      GTK_FILE_CHOOSER_ACTION_SAVE, "Salvar", "Cancelar");
+  gtk_file_chooser_set_current_name(GTK_FILE_CHOOSER(seletor), nome);
+  GtkFileFilter *filtro = gtk_file_filter_new();
+  gtk_file_filter_set_name(filtro, pdf ? "Arquivos PDF" : "Arquivos CSV");
+  gtk_file_filter_add_pattern(filtro, pdf ? "*.pdf" : "*.csv");
+  gtk_file_chooser_add_filter(GTK_FILE_CHOOSER(seletor), filtro);
+  g_object_unref(filtro);
+  g_signal_connect(seletor, "response", G_CALLBACK(ao_salvar_exportacao),
+                   pendente);
+  gtk_native_dialog_show(GTK_NATIVE_DIALOG(seletor));
 }
 
-static void ao_pdf(GtkButton *b, gpointer dados)
-{
-  exportar((TelaVisao *)dados, "pdf");
+static void ao_pdf(GtkButton *b, gpointer dados) {
+  (void)b;
+  exportar((TelaVisao *)dados, TRUE);
 }
-static void ao_csv(GtkButton *b, gpointer dados)
-{
-  exportar((TelaVisao *)dados, "csv");
+static void ao_csv(GtkButton *b, gpointer dados) {
+  (void)b;
+  exportar((TelaVisao *)dados, FALSE);
 }
-typedef struct
-{
+typedef struct {
   TelaVisao *t;
   char *caminho;
   GtkWidget *inicio;
   GtkWidget *fim;
 } ImportacaoPDF;
 
-static void ao_confirmar_importacao(GtkDialog *dialog,
-                                    int resposta,
-                                    gpointer dados)
-{
+static void ao_confirmar_importacao(GtkDialog *dialog, int resposta,
+                                    gpointer dados) {
   ImportacaoPDF *imp = dados;
 
-  if (resposta == GTK_RESPONSE_ACCEPT)
-  {
+  if (resposta == GTK_RESPONSE_ACCEPT) {
     int ini = seletor_data_get(imp->inicio);
     int fim = seletor_data_get(imp->fim);
 
-    if (!dados_data_valida(ini) ||
-        !dados_data_valida(fim) || ini > fim)
-    {
-      interface_mensagem(
-          imp->t->e, "Período inválido.", TRUE);
+    if (!dados_data_valida(ini) || !dados_data_valida(fim) || ini > fim) {
+      interface_mensagem(imp->t->e, "Período inválido.", TRUE);
       return;
     }
 
-    Data dataInicio = {
-        ini % 100,
-        (ini / 100) % 100,
-        ini / 10000};
+    Data dataInicio = {ini % 100, (ini / 100) % 100, ini / 10000};
 
-    Data dataFim = {
-        fim % 100,
-        (fim / 100) % 100,
-        fim / 10000};
+    Data dataFim = {fim % 100, (fim / 100) % 100, fim / 10000};
 
     Aplicacao *app = aplicacao_padrao();
 
     size_t importadas = 0;
     size_t duplicadas = 0;
 
-    int sucesso = importarPDF(
-        app, imp->caminho,
-        dataInicio, dataFim,
-        &importadas, &duplicadas);
+    int sucesso = importarPDF(app, imp->caminho, dataInicio, dataFim,
+                              &importadas, &duplicadas);
 
-    if (sucesso)
-    {
+    if (sucesso) {
       dados_recarregar();
 
       imp->t->renderizado = FALSE;
       atualizar(imp->t);
+      registrar_filtro_renderizado(imp->t);
 
       char mensagem[200];
 
-      g_snprintf(
-          mensagem, sizeof mensagem,
-          "%zu reservas importadas. "
-          "%zu duplicadas ignoradas.",
-          importadas, duplicadas);
+      g_snprintf(mensagem, sizeof mensagem,
+                 "%zu reservas importadas. "
+                 "%zu duplicadas ignoradas.",
+                 importadas, duplicadas);
 
-      interface_mensagem(
-          imp->t->e, mensagem, FALSE);
-    }
-    else
-    {
-      interface_mensagem(
-          imp->t->e,
-          "Falha na importação. Verifique o PDF, "
-          "as salas e os conflitos.",
-          TRUE);
+      interface_mensagem(imp->t->e, mensagem, FALSE);
+    } else {
+      interface_mensagem(imp->t->e,
+                         "Falha na importação. Verifique o PDF, "
+                         "as salas e os conflitos.",
+                         TRUE);
     }
   }
 
@@ -644,24 +727,17 @@ static void ao_confirmar_importacao(GtkDialog *dialog,
   g_free(imp->caminho);
   g_free(imp);
 }
-static void solicitar_periodo_pdf(TelaVisao *t,
-                                  const char *caminho)
-{
+static void solicitar_periodo_pdf(TelaVisao *t, const char *caminho) {
   ImportacaoPDF *imp = g_new0(ImportacaoPDF, 1);
 
   imp->t = t;
   imp->caminho = g_strdup(caminho);
 
   GtkWidget *dialog = gtk_dialog_new_with_buttons(
-      "Período do semestre",
-      GTK_WINDOW(t->e->janela),
-      GTK_DIALOG_MODAL,
-      "Cancelar", GTK_RESPONSE_CANCEL,
-      "Importar", GTK_RESPONSE_ACCEPT,
-      NULL);
+      "Período do semestre", GTK_WINDOW(t->e->janela), GTK_DIALOG_MODAL,
+      "Cancelar", GTK_RESPONSE_CANCEL, "Importar", GTK_RESPONSE_ACCEPT, NULL);
 
-  GtkWidget *caixa =
-      gtk_dialog_get_content_area(GTK_DIALOG(dialog));
+  GtkWidget *caixa = gtk_dialog_get_content_area(GTK_DIALOG(dialog));
 
   gtk_box_set_spacing(GTK_BOX(caixa), 12);
 
@@ -673,46 +749,35 @@ static void solicitar_periodo_pdf(TelaVisao *t,
   int hoje = dados_data_hoje();
   int ano = hoje / 10000;
 
-  imp->inicio = seletor_data_criar(
-      hoje, NULL, NULL);
+  imp->inicio = seletor_data_criar(hoje, NULL, NULL);
 
-  imp->fim = seletor_data_criar(
-      ano * 10000 + 1231, NULL, NULL);
+  imp->fim = seletor_data_criar(ano * 10000 + 1231, NULL, NULL);
 
-  gtk_box_append(GTK_BOX(caixa),
-                 gtk_label_new("Início do semestre"));
+  gtk_box_append(GTK_BOX(caixa), gtk_label_new("Início do semestre"));
 
   gtk_box_append(GTK_BOX(caixa), imp->inicio);
 
-  gtk_box_append(GTK_BOX(caixa),
-                 gtk_label_new("Fim do semestre"));
+  gtk_box_append(GTK_BOX(caixa), gtk_label_new("Fim do semestre"));
 
   gtk_box_append(GTK_BOX(caixa), imp->fim);
 
-  g_signal_connect(
-      dialog, "response",
-      G_CALLBACK(ao_confirmar_importacao), imp);
+  g_signal_connect(dialog, "response", G_CALLBACK(ao_confirmar_importacao),
+                   imp);
 
   gtk_window_present(GTK_WINDOW(dialog));
 }
 
-static void ao_selecionar_pdf(GtkNativeDialog *dialog,
-                              int resposta,
-                              gpointer dados)
-{
+static void ao_selecionar_pdf(GtkNativeDialog *dialog, int resposta,
+                              gpointer dados) {
   TelaVisao *t = (TelaVisao *)dados;
 
-  if (resposta == GTK_RESPONSE_ACCEPT)
-  {
-    GFile *arquivo = gtk_file_chooser_get_file(
-        GTK_FILE_CHOOSER(dialog));
+  if (resposta == GTK_RESPONSE_ACCEPT) {
+    GFile *arquivo = gtk_file_chooser_get_file(GTK_FILE_CHOOSER(dialog));
 
-    if (arquivo)
-    {
+    if (arquivo) {
       char *caminho = g_file_get_path(arquivo);
 
-      if (caminho)
-      {
+      if (caminho) {
         acao_log("PDF selecionado: %s", caminho);
 
         solicitar_periodo_pdf(t, caminho);
@@ -727,74 +792,59 @@ static void ao_selecionar_pdf(GtkNativeDialog *dialog,
   g_object_unref(dialog);
 }
 
-static void executar_importacao_pdf(TelaVisao *t)
-{
-  GtkFileChooserNative *seletor =
-      gtk_file_chooser_native_new(
-          "Selecionar PDF da grade",
-          GTK_WINDOW(t->e->janela),
-          GTK_FILE_CHOOSER_ACTION_OPEN,
-          "Selecionar",
-          "Cancelar");
+static void executar_importacao_pdf(TelaVisao *t) {
+  GtkFileChooserNative *seletor = gtk_file_chooser_native_new(
+      "Selecionar PDF da grade", GTK_WINDOW(t->e->janela),
+      GTK_FILE_CHOOSER_ACTION_OPEN, "Selecionar", "Cancelar");
 
   GtkFileFilter *filtro = gtk_file_filter_new();
 
   gtk_file_filter_set_name(filtro, "Arquivos PDF");
   gtk_file_filter_add_pattern(filtro, "*.pdf");
 
-  gtk_file_chooser_add_filter(
-      GTK_FILE_CHOOSER(seletor), filtro);
+  gtk_file_chooser_add_filter(GTK_FILE_CHOOSER(seletor), filtro);
 
   g_object_unref(filtro);
 
-  g_signal_connect(seletor, "response",
-                   G_CALLBACK(ao_selecionar_pdf), t);
+  g_signal_connect(seletor, "response", G_CALLBACK(ao_selecionar_pdf), t);
 
   gtk_native_dialog_show(GTK_NATIVE_DIALOG(seletor));
 }
 
 #if GTK_CHECK_VERSION(4, 10, 0)
 static void ao_resposta_alerta_pdf(GObject *source, GAsyncResult *res,
-                                   gpointer dados)
-{
+                                   gpointer dados) {
   GtkAlertDialog *dialog = GTK_ALERT_DIALOG(source);
   TelaVisao *t = (TelaVisao *)dados;
   GError *err = NULL;
   int escolha = gtk_alert_dialog_choose_finish(dialog, res, &err);
-  if (err)
-  {
+  if (err) {
     g_error_free(err);
     return;
   }
-  if (escolha == 1)
-  {
+  if (escolha == 1) {
     executar_importacao_pdf(t);
   }
 }
 #else
 static void ao_resposta_dialog_pdf(GtkDialog *dialog, int response_id,
-                                   gpointer dados)
-{
+                                   gpointer dados) {
   TelaVisao *t = (TelaVisao *)dados;
   gtk_window_destroy(GTK_WINDOW(dialog));
-  if (response_id == GTK_RESPONSE_ACCEPT)
-  {
+  if (response_id == GTK_RESPONSE_ACCEPT) {
     executar_importacao_pdf(t);
   }
 }
 #endif
 
-static void ao_importar_pdf(GtkButton *b, gpointer dados)
-{
+static void ao_importar_pdf(GtkButton *b, gpointer dados) {
   (void)b;
   TelaVisao *t = (TelaVisao *)dados;
-  GtkWindow *janela =
-      (t->e && t->e->janela) ? GTK_WINDOW(t->e->janela) : NULL;
+  GtkWindow *janela = (t->e && t->e->janela) ? GTK_WINDOW(t->e->janela) : NULL;
 
   const char *titulo = "Importar PDF da grade do semestre";
-  const char *mensagem =
-      "As novas reservas serão adicionadas sem excluir "
-      "as reservas existentes. Deseja continuar?";
+  const char *mensagem = "As novas reservas serão adicionadas sem excluir "
+                         "as reservas existentes. Deseja continuar?";
 #if GTK_CHECK_VERSION(4, 10, 0)
   const char *botoes[] = {"Cancelar", "Continuar", NULL};
   GtkAlertDialog *alerta = gtk_alert_dialog_new("%s", titulo);
@@ -817,19 +867,18 @@ static void ao_importar_pdf(GtkButton *b, gpointer dados)
 #endif
 }
 
-static void ao_aplicar(GtkButton *b, gpointer dados)
-{
+static void ao_aplicar(GtkButton *b, gpointer dados) {
   TelaVisao *t = (TelaVisao *)dados;
   Filtro f;
   ler_filtro(t, &f);
   acao_log("filtrar_quadro dia:%d tipo:%s sala:%s", f.dia,
            f.tipo[0] ? f.tipo : "(todas)", f.sala[0] ? f.sala : "(todas)");
   atualizar(t);
+  registrar_filtro_renderizado(t);
   interface_mensagem(t->e, "Filtros aplicados.", FALSE);
 }
 
-static GtkWidget *coluna_filtro(const char *titulo, GtkWidget *campo)
-{
+static GtkWidget *coluna_filtro(const char *titulo, GtkWidget *campo) {
   GtkWidget *c = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
   GtkWidget *l = gtk_label_new(titulo);
   gtk_widget_add_css_class(l, "subtitulo");
@@ -840,8 +889,7 @@ static GtkWidget *coluna_filtro(const char *titulo, GtkWidget *campo)
   return c;
 }
 
-static GtkWidget *cartao_titulo(const char *titulo)
-{
+static GtkWidget *cartao_titulo(const char *titulo) {
   GtkWidget *c = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
   gtk_widget_add_css_class(c, "card-visao");
   GtkWidget *l = gtk_label_new(titulo);
@@ -851,8 +899,7 @@ static GtkWidget *cartao_titulo(const char *titulo)
   return c;
 }
 
-GtkWidget *tela_visao_criar(Estado *e)
-{
+GtkWidget *tela_visao_criar(Estado *e) {
   TelaVisao *t = g_new0(TelaVisao, 1);
   t->e = e;
   estilo_visao();
@@ -958,17 +1005,16 @@ GtkWidget *tela_visao_criar(Estado *e)
   t->r_conf = rotulo("", 0, TRUE, FALSE);
   t->r_salas = rotulo("", 0, TRUE, FALSE);
   GtkWidget *lin[4] = {t->r_uso, t->r_ocup, t->r_conf, t->r_salas};
-  for (int i = 0; i < 4; i++)
-  {
-    if (lin[i] == t->r_conf)
-    {
+  for (int i = 0; i < 4; i++) {
+    if (lin[i] == t->r_conf) {
       GtkWidget *linha_c = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
       gtk_widget_set_hexpand(t->r_conf, TRUE);
       gtk_widget_add_css_class(t->r_conf, "resumo-linha");
       t->btn_conf_toggle = gtk_toggle_button_new_with_label("▸");
       gtk_widget_add_css_class(t->btn_conf_toggle, "flat");
       gtk_widget_set_valign(t->btn_conf_toggle, GTK_ALIGN_CENTER);
-      g_signal_connect(t->btn_conf_toggle, "toggled", G_CALLBACK(ao_toggle_conf), t);
+      g_signal_connect(t->btn_conf_toggle, "toggled",
+                       G_CALLBACK(ao_toggle_conf), t);
       gtk_box_append(GTK_BOX(linha_c), t->r_conf);
       gtk_box_append(GTK_BOX(linha_c), t->btn_conf_toggle);
       gtk_box_append(GTK_BOX(c_res), linha_c);
@@ -983,9 +1029,7 @@ GtkWidget *tela_visao_criar(Estado *e)
                                        GTK_REVEALER_TRANSITION_TYPE_SLIDE_DOWN);
       gtk_revealer_set_child(GTK_REVEALER(t->revealer_conf), t->lista_conf);
       gtk_box_append(GTK_BOX(c_res), t->revealer_conf);
-    }
-    else
-    {
+    } else {
       gtk_widget_add_css_class(lin[i], "resumo-linha");
       gtk_box_append(GTK_BOX(c_res), lin[i]);
     }

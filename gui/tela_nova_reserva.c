@@ -1,5 +1,5 @@
-#include "interface.h"
 #include "../include/aplicacao.h"
+#include "interface.h"
 #include <string.h>
 
 #define PRIMEIRA_HORA 420 /* 07:00 */
@@ -8,8 +8,8 @@
 #define FAIXA_INI 420
 #define FAIXA_TOT 900 /* 07:00 .. 22:00 */
 
-static const char *TIPOS[] = {"Monitoria", "Extensão", "Evento", "Aula",
-                              "Outro", NULL};
+static const char *TIPOS[] = {"Monitoria", "Extensão", "Evento",
+                              "Aula",      "Outro",    NULL};
 static const char *REPETICOES[] = {"Só nesta data",
                                    "Toda semana até o fim do ano", NULL};
 
@@ -503,8 +503,7 @@ void nova_reserva_editar(int id) {
   seletor_data_set(t->data, r->dia);
   Aplicacao *app = aplicacao_padrao();
   const Reserva *reserva = aplicacao_buscar_reserva(app, id);
-  gtk_widget_set_sensitive(t->data,
-                           reserva == NULL || !reserva->isRecorrente);
+  gtk_widget_set_sensitive(t->data, reserva == NULL || !reserva->isRecorrente);
 
   int a = (r->ini - PRIMEIRA_HORA) / PASSO;
   int b = (r->fim - PRIMEIRA_HORA) / PASSO;

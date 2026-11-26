@@ -12,6 +12,75 @@ static void definirCaminho(char destino[512], const char *caminho,
   snprintf(destino, 512, "%s", caminho ? caminho : padrao);
 }
 
+static int caminho_legado_txt(const char *caminhoCsv, char caminhoTxt[512]) {
+  size_t tamanho = strlen(caminhoCsv);
+  if (tamanho < 4 || strcmp(caminhoCsv + tamanho - 4, ".csv") != 0 ||
+      tamanho - 4 + sizeof ".txt" > 512)
+    return 0;
+
+  memcpy(caminhoTxt, caminhoCsv, tamanho - 4);
+  memcpy(caminhoTxt + tamanho - 4, ".txt", sizeof ".txt");
+  return 1;
+}
+
+static PersStatus carregar_salas_csv_ou_migrar_txt(const char *caminhoCsv,
+                                                   Sala **salas,
+                                                   size_t *quantidade,
+                                                   PersRelatorio *relatorio) {
+  PersStatus status =
+      pers_carregar_salas(caminhoCsv, salas, quantidade, relatorio);
+  if (status != PERS_OK || !relatorio->arquivo_ausente)
+    return status;
+
+  char caminhoTxt[512];
+  if (!caminho_legado_txt(caminhoCsv, caminhoTxt))
+    return PERS_OK;
+
+  PersRelatorio legado;
+  status = pers_carregar_salas(caminhoTxt, salas, quantidade, &legado);
+  if (status != PERS_OK || legado.arquivo_ausente)
+    return status;
+  if (legado.linhas_invalidas > 0) {
+    fprintf(stderr, "Migração cancelada: %s contém %zu linha(s) inválida(s).\n",
+            caminhoTxt, legado.linhas_invalidas);
+    return PERS_ERRO_DADO_INVALIDO;
+  }
+
+  status = pers_salvar_salas(caminhoCsv, *salas, *quantidade);
+  if (status == PERS_OK)
+    *relatorio = legado;
+  return status;
+}
+
+static PersStatus
+carregar_reservas_csv_ou_migrar_txt(const char *caminhoCsv, Reserva **reservas,
+                                    size_t *quantidade,
+                                    PersRelatorio *relatorio) {
+  PersStatus status =
+      pers_carregar_reservas(caminhoCsv, reservas, quantidade, relatorio);
+  if (status != PERS_OK || !relatorio->arquivo_ausente)
+    return status;
+
+  char caminhoTxt[512];
+  if (!caminho_legado_txt(caminhoCsv, caminhoTxt))
+    return PERS_OK;
+
+  PersRelatorio legado;
+  status = pers_carregar_reservas(caminhoTxt, reservas, quantidade, &legado);
+  if (status != PERS_OK || legado.arquivo_ausente)
+    return status;
+  if (legado.linhas_invalidas > 0) {
+    fprintf(stderr, "Migração cancelada: %s contém %zu linha(s) inválida(s).\n",
+            caminhoTxt, legado.linhas_invalidas);
+    return PERS_ERRO_DADO_INVALIDO;
+  }
+
+  status = pers_salvar_reservas(caminhoCsv, *reservas, *quantidade);
+  if (status == PERS_OK)
+    *relatorio = legado;
+  return status;
+}
+
 static Aplicacao aplicacaoPadrao;
 static int aplicacaoPadraoIniciada = 0;
 
@@ -31,10 +100,11 @@ int aplicacao_iniciar(Aplicacao *app, const char *caminhoSalas,
   definirCaminho(app->caminhoReservas, caminhoReservas, PERS_ARQ_RESERVAS);
 
   PersRelatorio relatorioSalas;
-  PersStatus status = pers_carregar_salas(app->caminhoSalas, &app->salas,
-                                          &app->quantidadeSalas,
-                                          &relatorioSalas);
+  PersStatus status = carregar_salas_csv_ou_migrar_txt(
+      app->caminhoSalas, &app->salas, &app->quantidadeSalas, &relatorioSalas);
   if (status != PERS_OK) {
+    fprintf(stderr, "Erro ao carregar %s: %s\n", app->caminhoSalas,
+            pers_mensagem(status));
     aplicacao_finalizar(app);
     return 0;
   }
@@ -42,7 +112,7 @@ int aplicacao_iniciar(Aplicacao *app, const char *caminhoSalas,
   if (caminhoSalas == NULL && relatorioSalas.arquivo_ausente) {
     Sala *salasExemplo = NULL;
     size_t quantidadeSalasExemplo = 0;
-    status = pers_carregar_salas("dados_exemplo/salas.txt", &salasExemplo,
+    status = pers_carregar_salas("dados_exemplo/salas.csv", &salasExemplo,
                                  &quantidadeSalasExemplo, NULL);
     if (status == PERS_OK) {
       app->salas = salasExemplo;
@@ -51,10 +121,12 @@ int aplicacao_iniciar(Aplicacao *app, const char *caminhoSalas,
   }
 
   PersRelatorio relatorioReservas;
-  status = pers_carregar_reservas(app->caminhoReservas, &app->reservas,
-                                  &app->quantidadeReservas,
-                                  &relatorioReservas);
+  status = carregar_reservas_csv_ou_migrar_txt(
+      app->caminhoReservas, &app->reservas, &app->quantidadeReservas,
+      &relatorioReservas);
   if (status != PERS_OK) {
+    fprintf(stderr, "Erro ao carregar %s: %s\n", app->caminhoReservas,
+            pers_mensagem(status));
     aplicacao_finalizar(app);
     return 0;
   }
@@ -62,9 +134,9 @@ int aplicacao_iniciar(Aplicacao *app, const char *caminhoSalas,
   if (caminhoReservas == NULL && relatorioReservas.arquivo_ausente) {
     Reserva *reservasExemplo = NULL;
     size_t quantidadeReservasExemplo = 0;
-    status = pers_carregar_reservas("dados_exemplo/reservas.txt",
-                                    &reservasExemplo,
-                                    &quantidadeReservasExemplo, NULL);
+    status =
+        pers_carregar_reservas("dados_exemplo/reservas.csv", &reservasExemplo,
+                               &quantidadeReservasExemplo, NULL);
     if (status == PERS_OK) {
       app->reservas = reservasExemplo;
       app->quantidadeReservas = quantidadeReservasExemplo;
@@ -75,8 +147,7 @@ int aplicacao_iniciar(Aplicacao *app, const char *caminhoSalas,
 
 Aplicacao *aplicacao_padrao(void) {
   if (!aplicacaoPadraoIniciada) {
-    aplicacaoPadraoIniciada =
-        aplicacao_iniciar(&aplicacaoPadrao, NULL, NULL);
+    aplicacaoPadraoIniciada = aplicacao_iniciar(&aplicacaoPadrao, NULL, NULL);
   }
   return aplicacaoPadraoIniciada ? &aplicacaoPadrao : NULL;
 }
@@ -136,8 +207,8 @@ int aplicacao_buscar_conflito_reserva(const Aplicacao *app,
 }
 
 int aplicacao_salvar_sala(Aplicacao *app, Sala *dados) {
-  if (app == NULL || dados == NULL || dados->id < 0 ||
-      dados->nome[0] == '\0' || dados->capacidade < 0)
+  if (app == NULL || dados == NULL || dados->id < 0 || dados->nome[0] == '\0' ||
+      dados->capacidade < 0)
     return 0;
 
   if (app->quantidadeSalas >= (size_t)-1 / sizeof *app->salas)
@@ -162,8 +233,8 @@ int aplicacao_salvar_sala(Aplicacao *app, Sala *dados) {
     memcpy(novas, app->salas, app->quantidadeSalas * sizeof *novas);
   novas[app->quantidadeSalas] = sala;
 
-  if (pers_salvar_salas(app->caminhoSalas, novas,
-                        app->quantidadeSalas + 1) != PERS_OK) {
+  if (pers_salvar_salas(app->caminhoSalas, novas, app->quantidadeSalas + 1) !=
+      PERS_OK) {
     pers_liberar(novas);
     return 0;
   }
@@ -236,8 +307,7 @@ int aplicacao_salvar_reservas(Aplicacao *app, Reserva reservas[],
   if (novas == NULL)
     return 0;
   if (app->quantidadeReservas > 0)
-    memcpy(novas, app->reservas,
-           app->quantidadeReservas * sizeof *novas);
+    memcpy(novas, app->reservas, app->quantidadeReservas * sizeof *novas);
 
   int maior = 0;
   for (size_t i = 0; i < app->quantidadeReservas; i++)
@@ -270,14 +340,13 @@ int aplicacao_salvar_reservas(Aplicacao *app, Reserva reservas[],
     novas[app->quantidadeReservas + i] = nova;
   }
 
- PersStatus status = pers_salvar_reservas(
-    app->caminhoReservas, novas, total);
+  PersStatus status = pers_salvar_reservas(app->caminhoReservas, novas, total);
 
-if (status != PERS_OK) {
+  if (status != PERS_OK) {
     fprintf(stderr, "Erro na persistencia: %d\n", (int)status);
     pers_liberar(novas);
     return 0;
-}
+  }
 
   for (size_t i = 0; i < quantidade; i++)
     reservas[i] = novas[app->quantidadeReservas + i];
