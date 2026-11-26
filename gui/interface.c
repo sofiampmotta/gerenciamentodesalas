@@ -169,7 +169,8 @@ static void ativar(GtkApplication *app, gpointer dados) {
   gtk_window_set_default_size(GTK_WINDOW(e->janela), 1024, 650);
 
   e->stack = gtk_stack_new();
-  gtk_stack_set_transition_type(GTK_STACK(e->stack), GTK_STACK_TRANSITION_TYPE_NONE);
+  gtk_stack_set_transition_type(GTK_STACK(e->stack),
+                                GTK_STACK_TRANSITION_TYPE_NONE);
   gtk_stack_set_transition_duration(GTK_STACK(e->stack), 0);
   gtk_stack_set_hhomogeneous(GTK_STACK(e->stack), FALSE);
   gtk_stack_set_vhomogeneous(GTK_STACK(e->stack), FALSE);

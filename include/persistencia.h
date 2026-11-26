@@ -13,8 +13,8 @@
 #include "salas.h"
 
 // Nomes padrao dos arquivos (na pasta onde o programa e executado)
-#define PERS_ARQ_SALAS    "salas.txt"
-#define PERS_ARQ_RESERVAS "reservas.txt"
+#define PERS_ARQ_SALAS    "salas.csv"
+#define PERS_ARQ_RESERVAS "reservas.csv"
 
 // Tamanho maximo do caminho de um arquivo
 #define PERS_CAMINHO_MAX 512

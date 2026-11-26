@@ -159,10 +159,10 @@ static int cmp_prox(const void *pa, const void *pb) {
 static void atualizar(TelaInicio *t) {
   time_t agora_t = time(NULL);
   struct tm *tm_local = localtime(&agora_t);
-  int hoje_dados =
-      tm_local ? (tm_local->tm_year + 1900) * 10000 +
-                     (tm_local->tm_mon + 1) * 100 + tm_local->tm_mday
-               : dados_data_hoje();
+  int hoje_dados = tm_local
+                       ? (tm_local->tm_year + 1900) * 10000 +
+                             (tm_local->tm_mon + 1) * 100 + tm_local->tm_mday
+                       : dados_data_hoje();
   int agora = tm_local ? tm_local->tm_hour * 60 + tm_local->tm_min : 0;
   int hora_atual = tm_local ? tm_local->tm_hour : 0;
 
