@@ -8,6 +8,7 @@
 Dia diaDaSemana(Data data); //Dia é o retorno (seg, ter) diaDaSemana é o nome da func, Data data é dia,mês,ano (parametros)
 
 bool horariosConflitam(Horario a, Horario b); //comparo 2 horários
+bool reservaOcorreEm(Reserva reserva, Data data);
 
 bool reservasConflitam(Reserva a, Reserva b); //comparo 2 reservas
 
