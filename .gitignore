@@ -9,4 +9,4 @@ build/
 *.bak
 .vscode/
 *.exe
-usuarios.csv
+*.csv
