@@ -7,7 +7,7 @@
 //   - pers_carregar_* uma vez, quando o programa abre;
 //   - pers_salvar_*   depois de cada alteracao (incluir, editar, excluir).
 //
-// Formato dos arquivos: ver docs/PERSISTENCIA.md.
+// Formato dos arquivos: ver a Wiki do repositorio (pagina Persistencia).
 
 #include <stddef.h>
 #include "salas.h"
