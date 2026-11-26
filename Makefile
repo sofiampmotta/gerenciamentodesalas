@@ -29,16 +29,21 @@ clean:
 
 
 # ---------------------------------------------------------------- Testes
-# Testes do modulo de persistencia (nao precisa do GTK).
+# Testes de persistencia e exportacao.
 # Rodam dentro de build/ para nao sujar a raiz do projeto.
 TEST_BIN = build/test_persistencia
+TEST_EXPORT_BIN = build/test_exportacao
 
 $(TEST_BIN): src/persistencia.c src/alocacao.c src/aplicacao.c tests/test_persistencia.c include/persistencia.h include/salas.h include/alocacao.h include/aplicacao.h
 	@mkdir -p build
 	$(CC) -std=c99 -Wall -Wextra -Iinclude src/persistencia.c src/alocacao.c src/aplicacao.c tests/test_persistencia.c -o $@
 
-test: $(TEST_BIN)
-	cd build && ./test_persistencia
+$(TEST_EXPORT_BIN): src/exportacao.c tests/test_exportacao.c include/exportacao.h
+	@mkdir -p build
+	$(CC) -std=c99 -Wall -Wextra -Iinclude $(shell pkg-config --cflags gtk4) src/exportacao.c tests/test_exportacao.c -o $@ $(shell pkg-config --libs gtk4)
+
+test: $(TEST_BIN) $(TEST_EXPORT_BIN)
+	cd build && ./test_persistencia && ./test_exportacao
 
 format:
 	$(CLANG_FORMAT) --style=LLVM -i $(C_FILES)

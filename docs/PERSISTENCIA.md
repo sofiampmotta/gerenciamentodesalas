@@ -1,14 +1,14 @@
 # Módulo de persistência
 
 Salva e carrega as **salas** (`Sala`) e as **reservas** (`Reserva`) definidas
-em `include/salas.h`, usando arquivos de texto locais. Resolve a issue #4.
+em `include/salas.h`, usando arquivos CSV locais com campos separados por `;`.
 
 | Arquivo | Conteúdo |
 |---|---|
 | `include/persistencia.h` | funções que os outros módulos chamam |
 | `src/persistencia.c` | implementação |
 | `tests/test_persistencia.c` | testes (`make test`) |
-| `dados_exemplo/` | 42 salas e 794 aulas reais de 2026.2 em formato legado v2 |
+| `dados_exemplo/` | 42 salas e 794 aulas reais de 2026.2 |
 
 ## Como usar
 
@@ -44,9 +44,9 @@ Para reservas é igual, com `pers_carregar_reservas`, `pers_salvar_reservas` e
 `PERS_ARQ_RESERVAS`. O vetor devolvido é alocado com `malloc`: quem recebe pode
 ficar com ele (e usar `realloc` para crescer) ou copiar para outra estrutura.
 
-## Por que texto (e não binário)
+## Formato CSV
 
-- Dá para abrir e conferir no Bloco de Notas.
+- Dá para abrir e conferir em planilhas e editores de texto.
 - Funciona igual em Windows e Linux. Com `fwrite` da struct, o arquivo depende
   do compilador (padding, tamanho de `bool` e de `int`).
 - Uma linha corrompida é ignorada, e o resto do arquivo continua sendo lido.
@@ -64,7 +64,7 @@ Regras gerais:
 - Tamanhos de texto contam **bytes**: letra acentuada ocupa 2.
 - Arquivos do Windows (`\r\n`, BOM do Bloco de Notas) são aceitos.
 
-### `salas.txt`
+### `salas.csv`
 
 ```
 #POLI-SALAS;SALAS;v2
@@ -81,10 +81,10 @@ id;nome;capacidade;acessivel;projetor;televisao;computadores;local
 | `acessivel`, `projetor`, `televisao` | `0` ou `1` |
 | `local` | opcional, até 127 bytes |
 
-Arquivos `salas.txt` `v1` continuam sendo lidos; o campo `local` começa vazio.
+Arquivos `salas.csv` `v1` continuam sendo lidos; o campo `local` começa vazio.
 Ao salvar, o arquivo é gravado no formato `v2`.
 
-### `reservas.txt`
+### `reservas.csv`
 
 ```
 #POLI-SALAS;RESERVAS;v3
@@ -113,7 +113,7 @@ id;id_sala;atividade;recorrente;data_inicio;fim_recorrencia;dia;inicio;fim;descr
 | Arquivo não existe (1ª execução) | `PERS_OK`, 0 registros, `rel.arquivo_ausente = 1` |
 | Arquivo vazio | `PERS_OK`, 0 registros |
 | Cabeçalho ausente ou de outro tipo/versão | `PERS_ERRO_FORMATO`, nada carregado |
-| `reservas.txt` antigo (`v1`, sem o `id`) | `PERS_ERRO_FORMATO` |
+| `reservas.csv` antigo (`v1`, sem o `id`) | `PERS_ERRO_FORMATO` |
 | Reservas `v2` | Lidas e migradas em memória; séries sem data inicial usam 13/11/2026 como âncora e avançam até o próximo dia semanal. Se havia data, ela é alinhada ao dia semanal. O próximo salvamento grava `v3`. |
 | Linha inválida (campo faltando, data/hora impossível, id repetido, nome de sala repetido...) | linha ignorada e contada em `rel.linhas_invalidas` |
 | Registro inválido ao salvar | `PERS_ERRO_DADO_INVALIDO`, arquivo **não** é alterado |
@@ -125,17 +125,32 @@ troca o arquivo de uma vez (`rename` / `MoveFileEx`). Se o programa cair no
 meio, o arquivo original continua inteiro. A versão anterior pode ser
 recuperada com `pers_restaurar_backup()`.
 
+**Migração de TXT:** ao iniciar, se `salas.csv` ou `reservas.csv` estiver
+ausente, o serviço procura o arquivo TXT homônimo. Se ele for válido, grava
+uma cópia CSV com o mesmo esquema e mantém o TXT intacto. Se houver linhas
+inválidas, cancela a migração e informa o erro em vez de gravar uma cópia
+parcial. Os dados de exemplo também são carregados dos arquivos `.csv`.
+
+## Exportação pela interface
+
+Na tela **Visão**, as opções de exportação usam o dia e os filtros atualmente
+exibidos. O CSV usa `;` como separador, inclui o horário legível, atividade,
+responsável, sala e indicador de recorrência, escapando aspas e campos com
+separadores. O PDF é formatado em páginas A4 e registra também o dia e os
+filtros aplicados. Ambos abrem uma janela para escolher o destino.
+
 ## Testes
 
 ```
 make test
 ```
 
-As verificações cobrem os critérios da issue #4, migração de recorrências e
-leitura/gravação dos dados reais de `dados_exemplo/`. O alvo `test` não precisa
-do GTK.
+As verificações cobrem os critérios da issue #4, migração de recorrências,
+leitura/gravação dos dados reais de `dados_exemplo/` e geração de CSV/PDF. O
+alvo `test` precisa das dependências GTK 4, Cairo e Pango usadas pela GUI e
+pelas exportações.
 
-No Windows sem `make`, rode a partir da pasta `build/`:
+No Windows sem `make`, rode os testes de persistência a partir da pasta `build/`:
 ```
 gcc -std=c99 -Wall -I../include ../src/persistencia.c ../src/alocacao.c ../tests/test_persistencia.c -o test_persistencia.exe
 .\test_persistencia.exe
@@ -151,7 +166,7 @@ mostrou alguns pontos para discutir:
    nome cortado (TÉCNICAS DE INTERVENÇÕES EM EDIFÍCIOS HISTÓRICOS). Sugestão: aumentar para 100, ou criar campos
    `turma` e `departamento`.
 2. ~~**`Reserva` não tem `id`.**~~ Resolvido: o `id` foi adicionado à struct
-   e o `reservas.txt` passou para a versão `v2`, com o `id` no primeiro campo.
+   e o arquivo de reservas passou para a versão `v2`, com o `id` no primeiro campo.
 3. **Duas turmas na mesma sala e horário:** a planilha tem 14 casos, como
    MICROCONTROLADORES e MICROPROCESSADORES na J-08, terça 20:30–22:10, com o
    mesmo professor. A checagem de conflito precisa permitir isso ou tratar
@@ -160,6 +175,6 @@ mostrou alguns pontos para discutir:
    `A-03` numa planilha e `A03` na outra. Em `dados_exemplo/` usei
    maiúsculas com hífen.
 5. **A planilha não informa capacidade nem recursos** (projetor etc.). Em
-   `dados_exemplo/salas.txt`, esses campos estão com 0.
+   `dados_exemplo/salas.csv`, esses campos estão com 0.
 6. Há aulas no sábado e horários fora dos blocos padrão (ex.: 19:40–21:20).
    O formato já aceita os dois casos.

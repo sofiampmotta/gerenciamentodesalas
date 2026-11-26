@@ -1,4 +1,4 @@
-// persistencia.c - le e grava as salas e reservas em arquivos de texto.
+// persistencia.c - le e grava salas e reservas em arquivos CSV.
 //
 // Gravacao segura:
 //   1. grava tudo em "<arquivo>.tmp";
@@ -85,8 +85,7 @@ static int data_valida(const Data *d) {
 }
 
 static Data adicionar_dia(Data data) {
-  static const int dias[] = {31, 28, 31, 30, 31, 30,
-                             31, 31, 30, 31, 30, 31};
+  static const int dias[] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
   data.dia++;
   int limite = dias[data.mes - 1];
   if (data.mes == 2 && eh_bissexto(data.ano))
@@ -133,12 +132,17 @@ static int reserva_valida(const Reserva *r) {
   if (!bool_valido(r->isRecorrente))
     return 0;
 
-  // Recorrencias valem ate o fim do ano em que comecam.
+  // Recorrencias possuem um periodo de validade.
   if (r->isRecorrente) {
-    if (!data_valida(&r->data) || !data_valida(&r->dataFim) ||
-        r->dataFim.dia != 31 || r->dataFim.mes != 12 ||
-        r->dataFim.ano != r->data.ano ||
-        diaDaSemana(r->data) != r->horario.dia)
+    if (!data_valida(&r->data) || !data_valida(&r->dataFim))
+      return 0;
+
+    int inicio = r->data.ano * 10000 + r->data.mes * 100 + r->data.dia;
+
+    int fim = r->dataFim.ano * 10000 + r->dataFim.mes * 100 + r->dataFim.dia;
+
+    if (fim < inicio || r->dataFim.dia != 31 || r->dataFim.mes != 12 ||
+        r->dataFim.ano != r->data.ano || diaDaSemana(r->data) != r->horario.dia)
       return 0;
   } else if (!data_valida(&r->data) || !data_vazia(&r->dataFim)) {
     return 0;
@@ -310,8 +314,7 @@ static int ler_sala(char **c, int n, void *destino) {
     return 0;
   if (!ler_inteiro(c[6], 0, INT_MAX, &s->computador))
     return 0;
-  if (n == CAMPOS_SALA &&
-      !copiar_texto(s->local, sizeof s->local, c[7]))
+  if (n == CAMPOS_SALA && !copiar_texto(s->local, sizeof s->local, c[7]))
     return 0;
   return sala_valida(s);
 }
@@ -356,8 +359,7 @@ static int ler_reserva(char **c, int n, void *destino) {
     return 0;
   if (!copiar_texto(r->descricao, sizeof r->descricao, c[8 + deslocamento]))
     return 0;
-  if (!copiar_texto(r->responsavel, sizeof r->responsavel,
-                    c[9 + deslocamento]))
+  if (!copiar_texto(r->responsavel, sizeof r->responsavel, c[9 + deslocamento]))
     return 0;
 
   if (!deslocamento && r->isRecorrente) {
@@ -451,9 +453,9 @@ static PersStatus carregar(const char *caminho, const char *cabecalho,
     if (!achou_cabecalho) {
       if (r == 1 && p[0] == '\0')
         continue; // linha em branco
-      if (r != 1 || (strcmp(p, cabecalho) != 0 &&
-                     (cabecalhoLegado == NULL ||
-                      strcmp(p, cabecalhoLegado) != 0))) {
+      if (r != 1 ||
+          (strcmp(p, cabecalho) != 0 &&
+           (cabecalhoLegado == NULL || strcmp(p, cabecalhoLegado) != 0))) {
         status = PERS_ERRO_FORMATO;
         break;
       }
@@ -508,10 +510,9 @@ typedef int (*EscreverFn)(FILE *f, const void *registro);
 
 static int escrever_sala(FILE *f, const void *r) {
   const Sala *s = r;
-  return fprintf(f, "%d;%s;%d;%d;%d;%d;%d;%s\n", s->id, s->nome,
-                 s->capacidade, s->isAcessivel ? 1 : 0,
-                 s->hasProjetor ? 1 : 0, s->hasTelevisao ? 1 : 0,
-                 s->computador, s->local);
+  return fprintf(f, "%d;%s;%d;%d;%d;%d;%d;%s\n", s->id, s->nome, s->capacidade,
+                 s->isAcessivel ? 1 : 0, s->hasProjetor ? 1 : 0,
+                 s->hasTelevisao ? 1 : 0, s->computador, s->local);
 }
 
 static int escrever_reserva(FILE *f, const void *x) {
@@ -523,12 +524,11 @@ static int escrever_reserva(FILE *f, const void *x) {
   if (!data_vazia(&r->dataFim))
     snprintf(dataFim, sizeof dataFim, "%04d-%02d-%02d", r->dataFim.ano,
              r->dataFim.mes, r->dataFim.dia);
-  return fprintf(f, "%d;%d;%s;%d;%s;%s;%s;%02d:%02d;%02d:%02d;%s;%s\n",
-                 r->id, r->idSala, NOMES_ATIVIDADE[r->atividade],
-                 r->isRecorrente ? 1 : 0, data, dataFim,
-                 NOMES_DIA[r->horario.dia], r->horario.comeco / 60,
-                 r->horario.comeco % 60, r->horario.fim / 60,
-                 r->horario.fim % 60, r->descricao, r->responsavel);
+  return fprintf(
+      f, "%d;%d;%s;%d;%s;%s;%s;%02d:%02d;%02d:%02d;%s;%s\n", r->id, r->idSala,
+      NOMES_ATIVIDADE[r->atividade], r->isRecorrente ? 1 : 0, data, dataFim,
+      NOMES_DIA[r->horario.dia], r->horario.comeco / 60, r->horario.comeco % 60,
+      r->horario.fim / 60, r->horario.fim % 60, r->descricao, r->responsavel);
 }
 
 // Obriga os dados a irem para o disco agora
@@ -659,8 +659,8 @@ PersStatus pers_salvar_salas(const char *caminho, const Sala *v, size_t n) {
 
 PersStatus pers_carregar_salas(const char *caminho, Sala **v, size_t *n,
                                PersRelatorio *rel) {
-  return carregar(caminho, CAB_SALAS, CAB_SALAS_LEGADO, sizeof(Sala),
-                  ler_sala, salas_duplicadas, (void **)v, n, rel);
+  return carregar(caminho, CAB_SALAS, CAB_SALAS_LEGADO, sizeof(Sala), ler_sala,
+                  salas_duplicadas, (void **)v, n, rel);
 }
 
 PersStatus pers_salvar_reservas(const char *caminho, const Reserva *v,

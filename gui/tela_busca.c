@@ -119,8 +119,7 @@ static void desenhar_faixa(GtkDrawingArea *area, cairo_t *cr, int w, int h,
 
   for (int i = 0; i < g_n_reservas; i++) {
     const ReservaVista *o = &g_reservas[i];
-    if (!dados_reserva_ocorre_em(o, f->dia) ||
-        strcmp(o->sala, f->sala) != 0)
+    if (!dados_reserva_ocorre_em(o, f->dia) || strcmp(o->sala, f->sala) != 0)
       continue;
     cairo_set_source_rgb(cr, 0.624, 0.702, 0.831);
     cairo_rectangle(cr, px(o->ini, w), 0, px(o->fim, w) - px(o->ini, w), barra);
@@ -246,10 +245,9 @@ static void buscar(TelaBusca *t) {
   Filtros f;
   ler_filtros(t, &f);
   limpar_caixa(t->resultados);
-  gtk_adjustment_set_value(
-      gtk_scrolled_window_get_vadjustment(
-          GTK_SCROLLED_WINDOW(t->rolagem_resultados)),
-      0);
+  gtk_adjustment_set_value(gtk_scrolled_window_get_vadjustment(
+                               GTK_SCROLLED_WINDOW(t->rolagem_resultados)),
+                           0);
 
   if (!dados_data_valida(f.dia)) {
     aviso(t, "Essa data não existe no calendário.");
@@ -455,14 +453,13 @@ GtkWidget *tela_busca_criar(Estado *e) {
   /* resultados */
   t->resultados = gtk_box_new(GTK_ORIENTATION_VERTICAL, 10);
   t->rolagem_resultados = gtk_scrolled_window_new();
-  gtk_scrolled_window_set_policy(
-      GTK_SCROLLED_WINDOW(t->rolagem_resultados), GTK_POLICY_NEVER,
-      GTK_POLICY_AUTOMATIC);
+  gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(t->rolagem_resultados),
+                                 GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
   gtk_scrolled_window_set_min_content_height(
       GTK_SCROLLED_WINDOW(t->rolagem_resultados), 180);
   gtk_widget_set_vexpand(t->rolagem_resultados, TRUE);
-  gtk_scrolled_window_set_child(
-      GTK_SCROLLED_WINDOW(t->rolagem_resultados), t->resultados);
+  gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(t->rolagem_resultados),
+                                t->resultados);
   gtk_box_append(GTK_BOX(pagina), t->rolagem_resultados);
   gtk_widget_set_vexpand(pagina, TRUE);
   g_signal_connect(pagina, "map", G_CALLBACK(ao_mostrar), t);

@@ -41,8 +41,8 @@ bool reservaOcorreEm(Reserva reserva, Data data) {
     return datasIguais(reserva.data, data);
 
   int dataConsulta = data.ano * 10000 + data.mes * 100 + data.dia;
-  int inicio = reserva.data.ano * 10000 + reserva.data.mes * 100 +
-               reserva.data.dia;
+  int inicio =
+      reserva.data.ano * 10000 + reserva.data.mes * 100 + reserva.data.dia;
   int fim = reserva.dataFim.ano * 10000 + reserva.dataFim.mes * 100 +
             reserva.dataFim.dia;
   return dataConsulta >= inicio && dataConsulta <= fim &&
@@ -58,8 +58,7 @@ bool reservasConflitam(Reserva a, Reserva b) {
     int inicio = a.data.ano * 10000 + a.data.mes * 100 + a.data.dia;
     int fim = a.dataFim.ano * 10000 + a.dataFim.mes * 100 + a.dataFim.dia;
     int outroInicio = b.data.ano * 10000 + b.data.mes * 100 + b.data.dia;
-    int outroFim =
-        b.dataFim.ano * 10000 + b.dataFim.mes * 100 + b.dataFim.dia;
+    int outroFim = b.dataFim.ano * 10000 + b.dataFim.mes * 100 + b.dataFim.dia;
     return a.horario.dia == b.horario.dia && inicio <= outroFim &&
            outroInicio <= fim && horariosConflitam(a.horario, b.horario);
   }

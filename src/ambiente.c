@@ -3,9 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 
-static Aplicacao *obterAplicacao(void) {
-  return aplicacao_padrao();
-}
+static Aplicacao *obterAplicacao(void) { return aplicacao_padrao(); }
 
 // retorna o indice da sala com esse id, ou -1 se nao achar
 int buscarIndicePorId(int id) {

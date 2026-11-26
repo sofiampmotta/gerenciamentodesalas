@@ -1,6 +1,6 @@
 #include "dados.h"
-#include "../include/aplicacao.h"
 #include "../include/alocacao.h"
+#include "../include/aplicacao.h"
 #include <string.h>
 
 SalaVista *g_salas;
@@ -58,8 +58,8 @@ void dados_iniciar(void) {
     destino->acessivel = origem->isAcessivel;
   }
 
-  static const char *const tipos[] = {"Aula", "Monitoria", "Extensão",
-                                      "Evento", "Outro"};
+  static const char *const tipos[] = {"Aula", "Monitoria", "Extensão", "Evento",
+                                      "Outro"};
   g_n_reservas = (int)app->quantidadeReservas;
   g_reservas = g_new0(ReservaVista, g_n_reservas);
   for (int i = 0; i < g_n_reservas; i++) {
@@ -67,8 +67,7 @@ void dados_iniciar(void) {
     ReservaVista *destino = &g_reservas[i];
     memset(destino, 0, sizeof *destino);
     destino->idReserva = origem->id;
-    g_strlcpy(destino->atividade, origem->descricao,
-              sizeof destino->atividade);
+    g_strlcpy(destino->atividade, origem->descricao, sizeof destino->atividade);
     int indiceTipo = (int)origem->atividade;
     if (indiceTipo < 0 || indiceTipo > 4)
       indiceTipo = 4;
@@ -86,6 +85,20 @@ void dados_iniciar(void) {
     destino->ini = origem->horario.comeco;
     destino->fim = origem->horario.fim;
   }
+}
+void dados_recarregar(void) {
+  g_free(g_salas);
+  g_free(g_reservas);
+
+  g_salas = NULL;
+  g_reservas = NULL;
+
+  g_n_salas = 0;
+  g_n_reservas = 0;
+
+  dados_iniciados = 0;
+
+  dados_iniciar();
 }
 
 int dados_data_hoje(void) {
@@ -118,14 +131,20 @@ void dados_hora_texto(int min, char *buf, size_t tam) {
 }
 
 int dados_reserva_ocorre_em(const ReservaVista *r, int dia) {
-  if (!dados_data_valida(dia))
+  if (!r || !dados_data_valida(dia))
     return 0;
-  Reserva reserva = {0};
-  reserva.isRecorrente = r->isRecorrente;
-  reserva.data = data_de_codigo(r->dia);
-  reserva.dataFim = data_de_codigo(r->fimRecorrencia);
-  reserva.horario.dia = diaDaSemana(reserva.data);
-  return reservaOcorreEm(reserva, data_de_codigo(dia));
+
+  Aplicacao *app = aplicacao_padrao();
+
+  if (!app)
+    return 0;
+
+  Reserva *reserva = aplicacao_buscar_reserva(app, r->idReserva);
+
+  if (!reserva)
+    return 0;
+
+  return reservaOcorreEm(*reserva, data_de_codigo(dia));
 }
 
 static Atividade atividade_backend(const char *tipo) {
@@ -157,8 +176,7 @@ static void reserva_gui_backend(const ReservaVista *origem, Aplicacao *app,
 
   reserva->idSala = id_sala_backend(app, origem->sala);
   reserva->atividade = atividade_backend(origem->tipo);
-  g_strlcpy(reserva->descricao, origem->atividade,
-            sizeof reserva->descricao);
+  g_strlcpy(reserva->descricao, origem->atividade, sizeof reserva->descricao);
   g_strlcpy(reserva->responsavel, origem->responsavel,
             sizeof reserva->responsavel);
   reserva->horario.comeco = origem->ini;
@@ -256,8 +274,8 @@ void dados_verificar_reserva(const ReservaVista *r, VerificacaoReserva *v) {
     return;
   }
   Reserva conflito;
-  int status = aplicacao_buscar_conflito_reserva(
-      app, &proposta, r->idReserva, &conflito);
+  int status = aplicacao_buscar_conflito_reserva(app, &proposta, r->idReserva,
+                                                 &conflito);
   if (status < 0) {
     titulo_motivo(v, "Erro ao verificar",
                   "Não foi possível validar o horário.");
@@ -329,8 +347,8 @@ int dados_salvar_reserva(const ReservaVista *r, char *msg, size_t tam) {
   n->dia = codigo_de_data(nova.data);
   n->fimRecorrencia = codigo_de_data(nova.dataFim);
   if (n->isRecorrente)
-    g_snprintf(msg, tam, "Reserva semanal salva na %s até 31/12/%04d.",
-               r->sala, nova.dataFim.ano);
+    g_snprintf(msg, tam, "Reserva semanal salva na %s até 31/12/%04d.", r->sala,
+               nova.dataFim.ano);
   else
     g_snprintf(msg, tam, "Reserva salva na %s.", r->sala);
   return 1;
@@ -376,8 +394,7 @@ int dados_atualizar_reserva(const ReservaVista *r, char *msg, size_t tam) {
   Reserva atualizada;
   reserva_gui_backend(r, app, anterior, &atualizada);
   if (!aplicacao_editar_reserva(app, r->idReserva, atualizada)) {
-    g_strlcpy(msg, "Não foi possível persistir as alterações da reserva.",
-              tam);
+    g_strlcpy(msg, "Não foi possível persistir as alterações da reserva.", tam);
     return -1;
   }
 

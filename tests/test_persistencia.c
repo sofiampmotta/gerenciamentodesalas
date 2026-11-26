@@ -3,9 +3,9 @@
  * Compilar e rodar:  make test   (roda dentro da pasta build/)
  */
 
-#include "persistencia.h"
 #include "alocacao.h"
 #include "aplicacao.h"
+#include "persistencia.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -38,8 +38,8 @@ static int total = 0, falhas = 0;
     }                                                                          \
   } while (0)
 
-#define ARQ_SAL "teste_salas.txt"
-#define ARQ_RES "teste_reservas.txt"
+#define ARQ_SAL "teste_salas.csv"
+#define ARQ_RES "teste_reservas.csv"
 
 /* ---------------------------------------------------------------- helpers */
 
@@ -58,6 +58,17 @@ static void escrever_texto(const char *caminho, const char *conteudo) {
     fputs(conteudo, f);
     fclose(f);
   }
+}
+
+static int ler_texto(const char *caminho, char *conteudo, size_t capacidade) {
+  FILE *f = fopen(caminho, "rb");
+  if (!f || capacidade == 0)
+    return 0;
+  size_t lidos = fread(conteudo, 1, capacidade - 1, f);
+  int ok = !ferror(f) && feof(f);
+  fclose(f);
+  conteudo[lidos] = '\0';
+  return ok;
 }
 
 static int existe(const char *caminho) {
@@ -134,10 +145,8 @@ static int reservas_iguais(const Reserva *a, const Reserva *b) {
          strcmp(a->responsavel, b->responsavel) == 0 &&
          a->isRecorrente == b->isRecorrente && a->data.dia == b->data.dia &&
          a->data.mes == b->data.mes && a->data.ano == b->data.ano &&
-         a->dataFim.dia == b->dataFim.dia &&
-         a->dataFim.mes == b->dataFim.mes &&
-         a->dataFim.ano == b->dataFim.ano &&
-         a->horario.dia == b->horario.dia &&
+         a->dataFim.dia == b->dataFim.dia && a->dataFim.mes == b->dataFim.mes &&
+         a->dataFim.ano == b->dataFim.ano && a->horario.dia == b->horario.dia &&
          a->horario.comeco == b->horario.comeco &&
          a->horario.fim == b->horario.fim;
 }
@@ -308,8 +317,8 @@ static void test_linhas_invalidas_salas(void) {
       "7;i-03;40;1;1;0;0\n"   /* 8: nome repetido (caixa)    */
       "8;;40;1;1;0;0\n"       /* 9: nome vazio               */
       "9;NOME-COM-MAIS-DE-19-BYTES;40;1;1;0;0\n" /* 10: nome grande demais    */
-      "10;I-12;40;1;1;0;0;extra;extra\n" /* 11: campo a mais        */
-      "%s"                         /* 12: linha gigante           */
+      "10;I-12;40;1;1;0;0;extra;extra\n"         /* 11: campo a mais        */
+      "%s" /* 12: linha gigante           */
       "# comentario ignorado\n"
       "\n"
       "13;LIP-03;30;0;0;1;25\n", /* 15: ok                      */
@@ -403,14 +412,13 @@ static void test_recorrencia_v3(void) {
   size_t n = 0;
   PersRelatorio rel;
 
-  escrever_texto(ARQ_RES,
-                 "#POLI-SALAS;RESERVAS;v3\n"
-                 "1;1;AULA;1;2026-11-16;2027-01-01;SEG;07:10;08:50;"
-                 "QUÍMICA (EM);Prof. A\n"
-                 "2;1;AULA;1;2026-11-16;2026-12-31;SEG;07:10;08:50;"
-                 "QUÍMICA (EM);Prof. A\n"
-                 "3;1;AULA;1;2026-11-17;2026-12-31;SEG;07:10;08:50;"
-                 "QUÍMICA (EM);Prof. A\n");
+  escrever_texto(ARQ_RES, "#POLI-SALAS;RESERVAS;v3\n"
+                          "1;1;AULA;1;2026-11-16;2027-01-01;SEG;07:10;08:50;"
+                          "QUÍMICA (EM);Prof. A\n"
+                          "2;1;AULA;1;2026-11-16;2026-12-31;SEG;07:10;08:50;"
+                          "QUÍMICA (EM);Prof. A\n"
+                          "3;1;AULA;1;2026-11-17;2026-12-31;SEG;07:10;08:50;"
+                          "QUÍMICA (EM);Prof. A\n");
   CHECK(pers_carregar_reservas(ARQ_RES, &r, &n, &rel) == PERS_OK);
   CHECK(n == 1 && rel.linhas_invalidas == 2);
   CHECK(r != NULL && r[0].id == 2 && r[0].data.dia == 16 &&
@@ -438,8 +446,7 @@ static void test_servico_aplicacao(void) {
 
   semanal.idSala = novaSala.id;
   CHECK(aplicacao_salvar_reserva(&app, semanal));
-  CHECK(app.quantidadeReservas == 1 &&
-        app.reservas[0].dataFim.dia == 31 &&
+  CHECK(app.quantidadeReservas == 1 && app.reservas[0].dataFim.dia == 31 &&
         app.reservas[0].dataFim.mes == 12);
 
   pontual.idSala = novaSala.id;
@@ -595,7 +602,7 @@ static void test_erros_de_parametro_e_caminho(void) {
   CHECK(pers_carregar_salas(ARQ_SAL, &s, NULL, NULL) == PERS_ERRO_PARAMETRO);
   CHECK(pers_restaurar_backup(NULL) == PERS_ERRO_PARAMETRO);
 
-  CHECK(pers_salvar_salas("pasta_que_nao_existe/salas.txt", v, 1) ==
+  CHECK(pers_salvar_salas("pasta_que_nao_existe/salas.csv", v, 1) ==
         PERS_ERRO_ABRIR);
 
   memset(caminho_longo, 'a', sizeof caminho_longo - 1);
@@ -616,7 +623,8 @@ static void test_muitos_registros(void) {
   if (!v)
     return;
   for (i = 0; i < QTD; i++)
-    v[i] = aula((int)i + 1, (int)(i % 42) + 1, (Dia)(i % 7), H(7, 10), H(8, 50));
+    v[i] =
+        aula((int)i + 1, (int)(i % 42) + 1, (Dia)(i % 7), H(7, 10), H(8, 50));
 
   limpar(ARQ_RES);
   CHECK(pers_salvar_reservas(ARQ_RES, v, QTD) == PERS_OK);
@@ -638,10 +646,10 @@ static void test_dados_reais_2026_2(void) {
   PersRelatorio rel;
   int refs_ok = 1, iguais = 1;
 
-  CHECK(pers_carregar_salas(DADOS_DIR "salas.txt", &s, &ns, &rel) == PERS_OK);
+  CHECK(pers_carregar_salas(DADOS_DIR "salas.csv", &s, &ns, &rel) == PERS_OK);
   CHECK(!rel.arquivo_ausente && rel.linhas_invalidas == 0 && ns == 42);
 
-  CHECK(pers_carregar_reservas(DADOS_DIR "reservas.txt", &r, &nr, &rel) ==
+  CHECK(pers_carregar_reservas(DADOS_DIR "reservas.csv", &r, &nr, &rel) ==
         PERS_OK);
   CHECK(!rel.arquivo_ausente && rel.linhas_invalidas == 0 && nr == 794);
 
@@ -676,6 +684,52 @@ static void test_dados_reais_2026_2(void) {
   limpar(ARQ_RES);
 }
 
+static void test_migrar_txt_para_csv(void) {
+  const char *salasTxt = "#POLI-SALAS;SALAS;v2\n"
+                         "1;A-03;45;1;1;0;0;Bloco A\n";
+  const char *reservasTxt =
+      "#POLI-SALAS;RESERVAS;v3\n"
+      "1;1;AULA;1;2026-11-16;2026-12-31;SEG;07:10;08:50;Calculo 1;Prof. A\n";
+  const char *caminhoSalas = "migracao_salas.csv";
+  const char *caminhoReservas = "migracao_reservas.csv";
+  char conteudo[512];
+  Aplicacao app;
+
+  limpar(caminhoSalas);
+  limpar(caminhoReservas);
+  limpar("migracao_salas.txt");
+  limpar("migracao_reservas.txt");
+  escrever_texto("migracao_salas.txt", salasTxt);
+  escrever_texto("migracao_reservas.txt", reservasTxt);
+
+  CHECK(aplicacao_iniciar(&app, caminhoSalas, caminhoReservas));
+  CHECK(app.quantidadeSalas == 1 && app.salas[0].id == 1);
+  CHECK(app.quantidadeReservas == 1 && app.reservas[0].id == 1);
+  CHECK(existe(caminhoSalas) && existe(caminhoReservas));
+  CHECK(ler_texto("migracao_salas.txt", conteudo, sizeof conteudo) &&
+        strcmp(conteudo, salasTxt) == 0);
+  CHECK(ler_texto("migracao_reservas.txt", conteudo, sizeof conteudo) &&
+        strcmp(conteudo, reservasTxt) == 0);
+  CHECK(ler_texto(caminhoSalas, conteudo, sizeof conteudo) &&
+        strstr(conteudo, "#POLI-SALAS;SALAS;v2") != NULL);
+  CHECK(ler_texto(caminhoReservas, conteudo, sizeof conteudo) &&
+        strstr(conteudo, "#POLI-SALAS;RESERVAS;v3") != NULL);
+
+  aplicacao_finalizar(&app);
+  limpar(caminhoSalas);
+  limpar(caminhoReservas);
+  limpar("migracao_salas.txt");
+  limpar("migracao_reservas.txt");
+
+  escrever_texto("migracao_salas.txt", "#POLI-SALAS;SALAS;v2\n"
+                                       "1;A-03;45;1;1;0;0;Bloco A\n"
+                                       "linha invalida\n");
+  CHECK(!aplicacao_iniciar(&app, caminhoSalas, caminhoReservas));
+  CHECK(!existe(caminhoSalas));
+  CHECK(existe("migracao_salas.txt"));
+  limpar("migracao_salas.txt");
+}
+
 /* ------------------------------------------------------------------- main */
 
 #define RODAR(t)                                                               \
@@ -703,6 +757,7 @@ int main(void) {
   RODAR(test_erros_de_parametro_e_caminho);
   RODAR(test_muitos_registros);
   RODAR(test_dados_reais_2026_2);
+  RODAR(test_migrar_txt_para_csv);
 
   printf("\n%d verificacoes, %d falha(s)\n", total, falhas);
   return falhas == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
