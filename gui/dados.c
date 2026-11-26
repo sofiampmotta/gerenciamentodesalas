@@ -71,6 +71,21 @@ void dados_iniciar(void) {
     destino->fim = origem->horario.fim;
   }
 }
+void dados_recarregar(void)
+{
+    g_free(g_salas);
+    g_free(g_reservas);
+
+    g_salas = NULL;
+    g_reservas = NULL;
+
+    g_n_salas = 0;
+    g_n_reservas = 0;
+
+    dados_iniciados = 0;
+
+    dados_iniciar();
+}
 
 int dados_data_hoje(void) {
   GDateTime *agora = g_date_time_new_now_local();
@@ -101,15 +116,23 @@ void dados_hora_texto(int min, char *buf, size_t tam) {
   g_snprintf(buf, tam, "%02d:%02d", min / 60, min % 60);
 }
 
-int dados_reserva_ocorre_em(const ReservaVista *r, int dia) {
-  if (!dados_data_valida(dia))
-    return 0;
-  Reserva reserva = {0};
-  reserva.isRecorrente = r->isRecorrente;
-  reserva.data = data_de_codigo(r->dia);
-  reserva.dataFim = data_de_codigo(r->fimRecorrencia);
-  reserva.horario.dia = diaDaSemana(reserva.data);
-  return reservaOcorreEm(reserva, data_de_codigo(dia));
+int dados_reserva_ocorre_em(const ReservaVista *r, int dia)
+{
+    if (!r || !dados_data_valida(dia))
+        return 0;
+
+    Aplicacao *app = aplicacao_padrao();
+
+    if (!app)
+        return 0;
+
+    Reserva *reserva = aplicacao_buscar_reserva(
+        app, r->idReserva);
+
+    if (!reserva)
+        return 0;
+
+    return reservaOcorreEm(*reserva, data_de_codigo(dia));
 }
 
 static Atividade atividade_backend(const char *tipo) {

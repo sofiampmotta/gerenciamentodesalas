@@ -49,52 +49,60 @@ static const char *const NOMES_ATIVIDADE[] = {"AULA", "MONITORIA", "EXTENSAO",
 static const char *const NOMES_DIA[] = {"SEG", "TER", "QUA", "QUI",
                                         "SEX", "SAB", "DOM"};
 
-#define QTD_ATIVIDADES                                                         \
+#define QTD_ATIVIDADES \
   ((int)(sizeof NOMES_ATIVIDADE / sizeof NOMES_ATIVIDADE[0]))
 #define QTD_DIAS ((int)(sizeof NOMES_DIA / sizeof NOMES_DIA[0]))
 
 // ---- Validacao ----
 
 // Texto cabe no campo e nao tem separador nem quebra de linha
-static int texto_valido(const char *s, size_t tam_campo, int permite_vazio) {
+static int texto_valido(const char *s, size_t tam_campo, int permite_vazio)
+{
   const char *fim = memchr(s, '\0', tam_campo);
   if (fim == NULL)
     return 0; // sem '\0' no final
   if (!permite_vazio && fim == s)
     return 0;
-  for (; s < fim; s++) {
+  for (; s < fim; s++)
+  {
     if (*s == SEPARADOR || *s == '\n' || *s == '\r')
       return 0;
   }
   return 1;
 }
 
-static int eh_bissexto(int a) {
+static int eh_bissexto(int a)
+{
   return (a % 4 == 0 && a % 100 != 0) || a % 400 == 0;
 }
 
-static int data_vazia(const Data *d) {
+static int data_vazia(const Data *d)
+{
   return d->dia == 0 && d->mes == 0 && d->ano == 0;
 }
 
-static int data_valida(const Data *d) {
+static int data_valida(const Data *d)
+{
   static const int dias[] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
   if (d->ano < 1900 || d->ano > 9999 || d->mes < 1 || d->mes > 12 || d->dia < 1)
     return 0;
   return d->dia <= dias[d->mes - 1] + (d->mes == 2 && eh_bissexto(d->ano));
 }
 
-static Data adicionar_dia(Data data) {
+static Data adicionar_dia(Data data)
+{
   static const int dias[] = {31, 28, 31, 30, 31, 30,
                              31, 31, 30, 31, 30, 31};
   data.dia++;
   int limite = dias[data.mes - 1];
   if (data.mes == 2 && eh_bissexto(data.ano))
     limite++;
-  if (data.dia > limite) {
+  if (data.dia > limite)
+  {
     data.dia = 1;
     data.mes++;
-    if (data.mes > 12) {
+    if (data.mes > 12)
+    {
       data.mes = 1;
       data.ano++;
     }
@@ -103,29 +111,34 @@ static Data adicionar_dia(Data data) {
 }
 
 // Confere se o valor do bool e 0 ou 1
-static int bool_valido(bool b) {
+static int bool_valido(bool b)
+{
   unsigned char byte;
   memcpy(&byte, &b, 1);
   return byte == 0 || byte == 1;
 }
 
 // Compara dois textos sem diferenciar maiusculas e minusculas
-static int iguais_sem_caixa(const char *a, const char *b) {
-  for (; *a && *b; a++, b++) {
+static int iguais_sem_caixa(const char *a, const char *b)
+{
+  for (; *a && *b; a++, b++)
+  {
     if (tolower((unsigned char)*a) != tolower((unsigned char)*b))
       return 0;
   }
   return *a == *b;
 }
 
-static int sala_valida(const Sala *s) {
+static int sala_valida(const Sala *s)
+{
   return s->id > 0 && texto_valido(s->nome, sizeof s->nome, 0) &&
          s->capacidade >= 0 && bool_valido(s->isAcessivel) &&
          bool_valido(s->hasProjetor) && bool_valido(s->hasTelevisao) &&
          s->computador >= 0 && texto_valido(s->local, sizeof s->local, 1);
 }
 
-static int reserva_valida(const Reserva *r) {
+static int reserva_valida(const Reserva *r)
+{
   if (r->id <= 0 || r->idSala <= 0)
     return 0;
   if ((int)r->atividade < 0 || (int)r->atividade >= QTD_ATIVIDADES)
@@ -133,14 +146,23 @@ static int reserva_valida(const Reserva *r) {
   if (!bool_valido(r->isRecorrente))
     return 0;
 
-  // Recorrencias valem ate o fim do ano em que comecam.
-  if (r->isRecorrente) {
-    if (!data_valida(&r->data) || !data_valida(&r->dataFim) ||
-        r->dataFim.dia != 31 || r->dataFim.mes != 12 ||
-        r->dataFim.ano != r->data.ano ||
-        diaDaSemana(r->data) != r->horario.dia)
+  // Recorrencias possuem um periodo de validade.
+  if (r->isRecorrente)
+  {
+    if (!data_valida(&r->data) || !data_valida(&r->dataFim))
       return 0;
-  } else if (!data_valida(&r->data) || !data_vazia(&r->dataFim)) {
+
+    int inicio = r->data.ano * 10000 +
+                 r->data.mes * 100 + r->data.dia;
+
+    int fim = r->dataFim.ano * 10000 +
+              r->dataFim.mes * 100 + r->dataFim.dia;
+
+    if (fim < inicio)
+      return 0;
+  }
+  else if (!data_valida(&r->data) || !data_vazia(&r->dataFim))
+  {
     return 0;
   }
 
@@ -155,13 +177,15 @@ static int reserva_valida(const Reserva *r) {
 }
 
 // Duas salas nao podem ter o mesmo id nem o mesmo nome
-static int salas_duplicadas(const void *x, const void *y) {
+static int salas_duplicadas(const void *x, const void *y)
+{
   const Sala *a = x, *b = y;
   return a->id == b->id || iguais_sem_caixa(a->nome, b->nome);
 }
 
 // Duas reservas nao podem ter o mesmo id
-static int reservas_duplicadas(const void *x, const void *y) {
+static int reservas_duplicadas(const void *x, const void *y)
+{
   const Reserva *a = x, *b = y;
   return a->id == b->id;
 }
@@ -171,7 +195,8 @@ static int reservas_duplicadas(const void *x, const void *y) {
 // Le uma linha sem o '\n' (e sem o '\r' que o Windows coloca).
 // Retorna 1 = linha lida, 0 = fim do arquivo, -1 = erro de leitura,
 //         2 = linha longa demais (o resto da linha e descartado).
-static int ler_linha(FILE *f, char *buf, size_t tam) {
+static int ler_linha(FILE *f, char *buf, size_t tam)
+{
   size_t len;
   int c;
 
@@ -179,10 +204,14 @@ static int ler_linha(FILE *f, char *buf, size_t tam) {
     return ferror(f) ? -1 : 0;
 
   len = strlen(buf);
-  if (len > 0 && buf[len - 1] == '\n') {
+  if (len > 0 && buf[len - 1] == '\n')
+  {
     buf[--len] = '\0';
-  } else if (!feof(f)) {
-    while ((c = fgetc(f)) != EOF && c != '\n') {
+  }
+  else if (!feof(f))
+  {
+    while ((c = fgetc(f)) != EOF && c != '\n')
+    {
       // descarta o resto da linha
     }
     return ferror(f) ? -1 : 2;
@@ -193,12 +222,15 @@ static int ler_linha(FILE *f, char *buf, size_t tam) {
 }
 
 // Corta a linha nos ';' (modifica a linha). Retorna quantos campos achou.
-static int dividir_campos(char *linha, char *campos[], int max) {
+static int dividir_campos(char *linha, char *campos[], int max)
+{
   int n = 0;
   char *p = linha;
   campos[n++] = p;
-  for (; *p; p++) {
-    if (*p == SEPARADOR) {
+  for (; *p; p++)
+  {
+    if (*p == SEPARADOR)
+    {
       if (n == max)
         return -1;
       *p = '\0';
@@ -208,7 +240,8 @@ static int dividir_campos(char *linha, char *campos[], int max) {
   return n;
 }
 
-static int ler_inteiro(const char *s, long min, long max, int *saida) {
+static int ler_inteiro(const char *s, long min, long max, int *saida)
+{
   char *fim;
   long v;
   if (*s == '\0' || isspace((unsigned char)*s))
@@ -221,12 +254,15 @@ static int ler_inteiro(const char *s, long min, long max, int *saida) {
   return 1;
 }
 
-static int ler_bool(const char *s, bool *saida) {
-  if (strcmp(s, "0") == 0) {
+static int ler_bool(const char *s, bool *saida)
+{
+  if (strcmp(s, "0") == 0)
+  {
     *saida = false;
     return 1;
   }
-  if (strcmp(s, "1") == 0) {
+  if (strcmp(s, "1") == 0)
+  {
     *saida = true;
     return 1;
   }
@@ -234,16 +270,19 @@ static int ler_bool(const char *s, bool *saida) {
 }
 
 // Procura o texto na tabela de nomes. Retorna a posicao ou -1.
-static int ler_nome(const char *s, const char *const tabela[], int qtd) {
+static int ler_nome(const char *s, const char *const tabela[], int qtd)
+{
   int i;
-  for (i = 0; i < qtd; i++) {
+  for (i = 0; i < qtd; i++)
+  {
     if (strcmp(s, tabela[i]) == 0)
       return i;
   }
   return -1;
 }
 
-static int copiar_texto(char *dst, size_t tam, const char *src) {
+static int copiar_texto(char *dst, size_t tam, const char *src)
+{
   size_t len = strlen(src);
   if (len >= tam)
     return 0;
@@ -251,9 +290,11 @@ static int copiar_texto(char *dst, size_t tam, const char *src) {
   return 1;
 }
 
-static int digitos(const char *s, int qtd) {
+static int digitos(const char *s, int qtd)
+{
   int i;
-  for (i = 0; i < qtd; i++) {
+  for (i = 0; i < qtd; i++)
+  {
     if (!isdigit((unsigned char)s[i]))
       return 0;
   }
@@ -261,8 +302,10 @@ static int digitos(const char *s, int qtd) {
 }
 
 // "AAAA-MM-DD" -> Data. Texto vazio vira 0/0/0.
-static int ler_data(const char *s, Data *d) {
-  if (*s == '\0') {
+static int ler_data(const char *s, Data *d)
+{
+  if (*s == '\0')
+  {
     d->dia = d->mes = d->ano = 0;
     return 1;
   }
@@ -277,7 +320,8 @@ static int ler_data(const char *s, Data *d) {
 }
 
 // "HH:MM" -> minutos desde 00:00
-static int ler_hora(const char *s, int *minutos) {
+static int ler_hora(const char *s, int *minutos)
+{
   int h, m;
   if (strlen(s) != 5 || !digitos(s, 2) || s[2] != ':' || !digitos(s + 3, 2))
     return 0;
@@ -291,7 +335,8 @@ static int ler_hora(const char *s, int *minutos) {
 
 // ---- Linha do arquivo -> struct ----
 
-static int ler_sala(char **c, int n, void *destino) {
+static int ler_sala(char **c, int n, void *destino)
+{
   Sala *s = destino;
   if (n != CAMPOS_SALA && n != CAMPOS_SALA - 1)
     return 0;
@@ -316,8 +361,10 @@ static int ler_sala(char **c, int n, void *destino) {
   return sala_valida(s);
 }
 
-static Data proxima_data_recorrente(Data data, Dia dia) {
-  for (int i = 0; i < 7 && diaDaSemana(data) != dia; i++) {
+static Data proxima_data_recorrente(Data data, Dia dia)
+{
+  for (int i = 0; i < 7 && diaDaSemana(data) != dia; i++)
+  {
     if (data.ano == 9999 && data.mes == 12 && data.dia == 31)
       return (Data){0};
     data = adicionar_dia(data);
@@ -325,7 +372,8 @@ static Data proxima_data_recorrente(Data data, Dia dia) {
   return data;
 }
 
-static int ler_reserva(char **c, int n, void *destino) {
+static int ler_reserva(char **c, int n, void *destino)
+{
   Reserva *r = destino;
   int atividade, dia, deslocamento;
   if (n != CAMPOS_RESERVA && n != CAMPOS_RESERVA_V2)
@@ -360,12 +408,15 @@ static int ler_reserva(char **c, int n, void *destino) {
                     c[9 + deslocamento]))
     return 0;
 
-  if (!deslocamento && r->isRecorrente) {
-    if (data_vazia(&r->data)) {
+  if (!deslocamento && r->isRecorrente)
+  {
+    if (data_vazia(&r->data))
+    {
       r->data.dia = DATA_REFERENCIA_LEGADA % 100;
       r->data.mes = (DATA_REFERENCIA_LEGADA / 100) % 100;
       r->data.ano = DATA_REFERENCIA_LEGADA / 10000;
-    } else if (!data_valida(&r->data))
+    }
+    else if (!data_valida(&r->data))
       return 0;
     r->data = proxima_data_recorrente(r->data, r->horario.dia);
     r->dataFim = (Data){31, 12, r->data.ano};
@@ -379,18 +430,21 @@ typedef int (*LerRegistroFn)(char **campos, int n, void *destino);
 typedef int (*DuplicadoFn)(const void *a, const void *b);
 
 static int ja_existe(const char *base, size_t n, size_t tam, DuplicadoFn dup,
-                     const void *reg) {
+                     const void *reg)
+{
   size_t i;
   if (dup == NULL)
     return 0;
-  for (i = 0; i < n; i++) {
+  for (i = 0; i < n; i++)
+  {
     if (dup(base + i * tam, reg))
       return 1;
   }
   return 0;
 }
 
-static void marcar_invalida(PersRelatorio *rel, size_t num_linha) {
+static void marcar_invalida(PersRelatorio *rel, size_t num_linha)
+{
   rel->linhas_invalidas++;
   if (rel->primeira_linha_invalida == 0)
     rel->primeira_linha_invalida = num_linha;
@@ -399,7 +453,8 @@ static void marcar_invalida(PersRelatorio *rel, size_t num_linha) {
 static PersStatus carregar(const char *caminho, const char *cabecalho,
                            const char *cabecalhoLegado, size_t tam,
                            LerRegistroFn ler, DuplicadoFn dup, void **saida,
-                           size_t *n_saida, PersRelatorio *rel_usuario) {
+                           size_t *n_saida, PersRelatorio *rel_usuario)
+{
   PersRelatorio rel_local;
   PersRelatorio *rel = rel_usuario ? rel_usuario : &rel_local;
   FILE *f;
@@ -420,8 +475,10 @@ static PersStatus carregar(const char *caminho, const char *cabecalho,
   memset(rel, 0, sizeof *rel);
 
   f = fopen(caminho, "rb");
-  if (f == NULL) {
-    if (errno == ENOENT) { // arquivo nao existe: primeira vez, lista vazia
+  if (f == NULL)
+  {
+    if (errno == ENOENT)
+    { // arquivo nao existe: primeira vez, lista vazia
       rel->arquivo_ausente = 1;
       return PERS_OK;
     }
@@ -429,31 +486,37 @@ static PersStatus carregar(const char *caminho, const char *cabecalho,
   }
 
   registro = malloc(tam);
-  if (registro == NULL) {
+  if (registro == NULL)
+  {
     fclose(f);
     return PERS_ERRO_MEMORIA;
   }
 
-  while ((r = ler_linha(f, linha, sizeof linha)) != 0) {
+  while ((r = ler_linha(f, linha, sizeof linha)) != 0)
+  {
     char *p = linha;
     num_linha++;
-    if (r < 0) {
+    if (r < 0)
+    {
       status = PERS_ERRO_LEITURA;
       break;
     }
 
     // Pula os 3 bytes que o Bloco de Notas as vezes coloca no inicio
     if (num_linha == 1 && (unsigned char)p[0] == 0xEF &&
-        (unsigned char)p[1] == 0xBB && (unsigned char)p[2] == 0xBF) {
+        (unsigned char)p[1] == 0xBB && (unsigned char)p[2] == 0xBF)
+    {
       p += 3;
     }
 
-    if (!achou_cabecalho) {
+    if (!achou_cabecalho)
+    {
       if (r == 1 && p[0] == '\0')
         continue; // linha em branco
       if (r != 1 || (strcmp(p, cabecalho) != 0 &&
                      (cabecalhoLegado == NULL ||
-                      strcmp(p, cabecalhoLegado) != 0))) {
+                      strcmp(p, cabecalhoLegado) != 0)))
+      {
         status = PERS_ERRO_FORMATO;
         break;
       }
@@ -466,16 +529,19 @@ static PersStatus carregar(const char *caminho, const char *cabecalho,
 
     if (r == 2 ||
         !ler(campos, dividir_campos(p, campos, CAMPOS_MAX), registro) ||
-        ja_existe(vetor, n, tam, dup, registro)) {
+        ja_existe(vetor, n, tam, dup, registro))
+    {
       marcar_invalida(rel, num_linha);
       continue;
     }
 
     // Lista cheia: dobra o tamanho (16, 32, 64...)
-    if (n == cap) {
+    if (n == cap)
+    {
       size_t nova = cap ? cap * 2 : 16;
       char *tmp = realloc(vetor, nova * tam);
-      if (tmp == NULL) {
+      if (tmp == NULL)
+      {
         status = PERS_ERRO_MEMORIA;
         break;
       }
@@ -490,7 +556,8 @@ static PersStatus carregar(const char *caminho, const char *cabecalho,
   free(registro);
   fclose(f);
 
-  if (status != PERS_OK) {
+  if (status != PERS_OK)
+  {
     free(vetor);
     rel->registros_lidos = 0;
     return status;
@@ -506,7 +573,8 @@ static PersStatus carregar(const char *caminho, const char *cabecalho,
 
 typedef int (*EscreverFn)(FILE *f, const void *registro);
 
-static int escrever_sala(FILE *f, const void *r) {
+static int escrever_sala(FILE *f, const void *r)
+{
   const Sala *s = r;
   return fprintf(f, "%d;%s;%d;%d;%d;%d;%d;%s\n", s->id, s->nome,
                  s->capacidade, s->isAcessivel ? 1 : 0,
@@ -514,7 +582,8 @@ static int escrever_sala(FILE *f, const void *r) {
                  s->computador, s->local);
 }
 
-static int escrever_reserva(FILE *f, const void *x) {
+static int escrever_reserva(FILE *f, const void *x)
+{
   const Reserva *r = x;
   char data[16] = "", dataFim[16] = "";
   if (!data_vazia(&r->data))
@@ -532,7 +601,8 @@ static int escrever_reserva(FILE *f, const void *x) {
 }
 
 // Obriga os dados a irem para o disco agora
-static int sincronizar_disco(FILE *f) {
+static int sincronizar_disco(FILE *f)
+{
 #ifdef _WIN32
   return _commit(_fileno(f));
 #else
@@ -541,7 +611,8 @@ static int sincronizar_disco(FILE *f) {
 }
 
 // Troca 'destino' por 'origem' de uma vez so. Retorna 0 se deu certo.
-static int substituir_arquivo(const char *origem, const char *destino) {
+static int substituir_arquivo(const char *origem, const char *destino)
+{
 #ifdef _WIN32
   return MoveFileExA(origem, destino,
                      MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)
@@ -553,7 +624,8 @@ static int substituir_arquivo(const char *origem, const char *destino) {
 }
 
 // Copia um arquivo. Retorna 0 = ok, 1 = origem nao existe, -1 = erro.
-static int copiar_arquivo(const char *origem, const char *destino) {
+static int copiar_arquivo(const char *origem, const char *destino)
+{
   char buf[4096];
   size_t lidos;
   int ok = 1;
@@ -563,13 +635,16 @@ static int copiar_arquivo(const char *origem, const char *destino) {
   if (in == NULL)
     return errno == ENOENT ? 1 : -1;
   out = fopen(destino, "wb");
-  if (out == NULL) {
+  if (out == NULL)
+  {
     fclose(in);
     return -1;
   }
 
-  while ((lidos = fread(buf, 1, sizeof buf, in)) > 0) {
-    if (fwrite(buf, 1, lidos, out) != lidos) {
+  while ((lidos = fread(buf, 1, sizeof buf, in)) > 0)
+  {
+    if (fwrite(buf, 1, lidos, out) != lidos)
+    {
       ok = 0;
       break;
     }
@@ -584,14 +659,16 @@ static int copiar_arquivo(const char *origem, const char *destino) {
   return ok ? 0 : -1;
 }
 
-static int montar_caminho(char *dst, const char *caminho, const char *sufixo) {
+static int montar_caminho(char *dst, const char *caminho, const char *sufixo)
+{
   int n = snprintf(dst, PERS_CAMINHO_MAX, "%s%s", caminho, sufixo);
   return n > 0 && n < PERS_CAMINHO_MAX;
 }
 
 static PersStatus gravar(const char *caminho, const char *cabecalho,
                          const void *dados, size_t n, size_t tam,
-                         EscreverFn escrever) {
+                         EscreverFn escrever)
+{
   char tmp[PERS_CAMINHO_MAX], bak[PERS_CAMINHO_MAX];
   const char *base = dados;
   FILE *f;
@@ -607,7 +684,8 @@ static PersStatus gravar(const char *caminho, const char *cabecalho,
     return PERS_ERRO_ABRIR;
 
   ok = fprintf(f, "%s\n", cabecalho) >= 0;
-  for (i = 0; ok && i < n; i++) {
+  for (i = 0; ok && i < n; i++)
+  {
     ok = escrever(f, base + i * tam) >= 0;
   }
   if (ok)
@@ -615,7 +693,8 @@ static PersStatus gravar(const char *caminho, const char *cabecalho,
   if (fclose(f) != 0)
     ok = 0;
 
-  if (!ok) {
+  if (!ok)
+  {
     remove(tmp); // o arquivo original nao foi mexido
     return PERS_ERRO_ESCRITA;
   }
@@ -623,7 +702,8 @@ static PersStatus gravar(const char *caminho, const char *cabecalho,
   // Copia de seguranca da versao anterior
   (void)copiar_arquivo(caminho, bak);
 
-  if (substituir_arquivo(tmp, caminho) != 0) {
+  if (substituir_arquivo(tmp, caminho) != 0)
+  {
     remove(tmp);
     return PERS_ERRO_ESCRITA;
   }
@@ -632,10 +712,12 @@ static PersStatus gravar(const char *caminho, const char *cabecalho,
 
 // Confere todos os registros (e se ha repetidos) antes de gravar
 static int vetor_valido(const void *dados, size_t n, size_t tam,
-                        int (*valido)(const void *), DuplicadoFn dup) {
+                        int (*valido)(const void *), DuplicadoFn dup)
+{
   const char *base = dados;
   size_t i;
-  for (i = 0; i < n; i++) {
+  for (i = 0; i < n; i++)
+  {
     if (!valido(base + i * tam))
       return 0;
     if (ja_existe(base, i, tam, dup, base + i * tam))
@@ -649,7 +731,8 @@ static int reserva_valida_v(const void *r) { return reserva_valida(r); }
 
 // ---- Funcoes do persistencia.h ----
 
-PersStatus pers_salvar_salas(const char *caminho, const Sala *v, size_t n) {
+PersStatus pers_salvar_salas(const char *caminho, const Sala *v, size_t n)
+{
   if (caminho == NULL || (v == NULL && n > 0))
     return PERS_ERRO_PARAMETRO;
   if (!vetor_valido(v, n, sizeof *v, sala_valida_v, salas_duplicadas))
@@ -658,13 +741,15 @@ PersStatus pers_salvar_salas(const char *caminho, const Sala *v, size_t n) {
 }
 
 PersStatus pers_carregar_salas(const char *caminho, Sala **v, size_t *n,
-                               PersRelatorio *rel) {
+                               PersRelatorio *rel)
+{
   return carregar(caminho, CAB_SALAS, CAB_SALAS_LEGADO, sizeof(Sala),
                   ler_sala, salas_duplicadas, (void **)v, n, rel);
 }
 
 PersStatus pers_salvar_reservas(const char *caminho, const Reserva *v,
-                                size_t n) {
+                                size_t n)
+{
   if (caminho == NULL || (v == NULL && n > 0))
     return PERS_ERRO_PARAMETRO;
   if (!vetor_valido(v, n, sizeof *v, reserva_valida_v, reservas_duplicadas))
@@ -673,14 +758,16 @@ PersStatus pers_salvar_reservas(const char *caminho, const Reserva *v,
 }
 
 PersStatus pers_carregar_reservas(const char *caminho, Reserva **v, size_t *n,
-                                  PersRelatorio *rel) {
+                                  PersRelatorio *rel)
+{
   return carregar(caminho, CAB_RESERVAS, CAB_RESERVAS_LEGADO, sizeof(Reserva),
                   ler_reserva, reservas_duplicadas, (void **)v, n, rel);
 }
 
 void pers_liberar(void *vetor) { free(vetor); }
 
-PersStatus pers_restaurar_backup(const char *caminho) {
+PersStatus pers_restaurar_backup(const char *caminho)
+{
   char tmp[PERS_CAMINHO_MAX], bak[PERS_CAMINHO_MAX];
   int r;
 
@@ -693,19 +780,23 @@ PersStatus pers_restaurar_backup(const char *caminho) {
   r = copiar_arquivo(bak, tmp);
   if (r == 1)
     return PERS_ERRO_SEM_BACKUP;
-  if (r != 0) {
+  if (r != 0)
+  {
     remove(tmp);
     return PERS_ERRO_ESCRITA;
   }
-  if (substituir_arquivo(tmp, caminho) != 0) {
+  if (substituir_arquivo(tmp, caminho) != 0)
+  {
     remove(tmp);
     return PERS_ERRO_ESCRITA;
   }
   return PERS_OK;
 }
 
-const char *pers_mensagem(PersStatus status) {
-  switch (status) {
+const char *pers_mensagem(PersStatus status)
+{
+  switch (status)
+  {
   case PERS_OK:
     return "Operacao concluida com sucesso.";
   case PERS_ERRO_PARAMETRO:

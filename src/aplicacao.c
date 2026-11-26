@@ -270,10 +270,14 @@ int aplicacao_salvar_reservas(Aplicacao *app, Reserva reservas[],
     novas[app->quantidadeReservas + i] = nova;
   }
 
-  if (pers_salvar_reservas(app->caminhoReservas, novas, total) != PERS_OK) {
+ PersStatus status = pers_salvar_reservas(
+    app->caminhoReservas, novas, total);
+
+if (status != PERS_OK) {
+    fprintf(stderr, "Erro na persistencia: %d\n", (int)status);
     pers_liberar(novas);
     return 0;
-  }
+}
 
   for (size_t i = 0; i < quantidade; i++)
     reservas[i] = novas[app->quantidadeReservas + i];
