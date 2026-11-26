@@ -28,6 +28,7 @@ typedef struct {
   int dia, ini, fim;
 } Faixa;
 
+
 static void estilo_busca(void) {
   static gboolean carregado = FALSE;
   if (carregado)

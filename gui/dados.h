@@ -2,6 +2,8 @@
 #define DADOS_H
 #include <glib.h>
 
+#define DATA_PADRAO 20261113
+
 /* Adaptadores de apresentação para os campos consumidos pelas telas GTK. */
 typedef struct {
     int id;

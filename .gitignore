@@ -1,5 +1,9 @@
 bin/
+usuarios.csv
+.vscode/
 obj/
+*.pdf
+*.exe
 build/
 *.tmp
 *.bak
