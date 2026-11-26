@@ -27,7 +27,6 @@ typedef struct {
   GtkWidget *titulo_pag, *b_salvar_w;
 } TelaNova;
 
-
 static TelaNova *g_nova = NULL;
 
 static void estilo_nova(void) {

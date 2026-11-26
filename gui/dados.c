@@ -21,18 +21,17 @@ static int codigo_de_data(Data data) {
 static int g_dia_base_inicial = DATA_PADRAO;
 
 int dados_dia_hoje(void) {
-    GDateTime *agora = g_date_time_new_now_local();
-    if (!agora) return DATA_PADRAO;
-    int d = g_date_time_get_year(agora) * 10000
-          + g_date_time_get_month(agora) * 100
-          + g_date_time_get_day_of_month(agora);
-    g_date_time_unref(agora);
-    return dados_data_valida(d) ? d : DATA_PADRAO;
+  GDateTime *agora = g_date_time_new_now_local();
+  if (!agora)
+    return DATA_PADRAO;
+  int d = g_date_time_get_year(agora) * 10000 +
+          g_date_time_get_month(agora) * 100 +
+          g_date_time_get_day_of_month(agora);
+  g_date_time_unref(agora);
+  return dados_data_valida(d) ? d : DATA_PADRAO;
 }
 
-int dados_dia_base_inicial(void) {
-    return g_dia_base_inicial;
-}
+int dados_dia_base_inicial(void) { return g_dia_base_inicial; }
 
 void dados_iniciar(void) {
   if (dados_iniciados)

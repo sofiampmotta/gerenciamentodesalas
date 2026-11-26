@@ -301,6 +301,30 @@ static bool buscar_id_sala(const Aplicacao *app, const char *nome,
 
   return encontrou;
 }
+
+static Data adicionar_dia(Data data) {
+  static const int dias[] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+  int limite = dias[data.mes - 1];
+  if (data.mes == 2 &&
+      ((data.ano % 4 == 0 && data.ano % 100 != 0) || data.ano % 400 == 0))
+    limite++;
+
+  if (++data.dia > limite) {
+    data.dia = 1;
+    if (++data.mes > 12) {
+      data.mes = 1;
+      data.ano++;
+    }
+  }
+  return data;
+}
+
+static Data primeira_data_do_dia(Data inicio, Dia dia) {
+  for (int i = 0; i < 7 && diaDaSemana(inicio) != dia; i++)
+    inicio = adicionar_dia(inicio);
+  return inicio;
+}
+
 static Reserva criar_reserva(const TurmaPDF *turma, int idSala, Dia dia,
                              int inicio, int fim, Data dataInicio,
                              Data dataFim) {
@@ -310,7 +334,7 @@ static Reserva criar_reserva(const TurmaPDF *turma, int idSala, Dia dia,
   r.atividade = AULA;
   r.isRecorrente = true;
 
-  r.data = dataInicio;
+  r.data = primeira_data_do_dia(dataInicio, dia);
   r.dataFim = dataFim;
 
   r.horario.dia = dia;
