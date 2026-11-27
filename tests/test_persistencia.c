@@ -413,16 +413,24 @@ static void test_recorrencia_v3(void) {
   PersRelatorio rel;
 
   escrever_texto(ARQ_RES, "#POLI-SALAS;RESERVAS;v3\n"
-                          "1;1;AULA;1;2026-11-16;2027-01-01;SEG;07:10;08:50;"
+                          /* fim antes do inicio */
+                          "1;1;AULA;1;2026-11-16;2026-11-10;SEG;07:10;08:50;"
                           "QUÍMICA (EM);Prof. A\n"
+                          /* ok: termina em 31/12 */
                           "2;1;AULA;1;2026-11-16;2026-12-31;SEG;07:10;08:50;"
                           "QUÍMICA (EM);Prof. A\n"
+                          /* inicio nao cai numa segunda */
                           "3;1;AULA;1;2026-11-17;2026-12-31;SEG;07:10;08:50;"
+                          "QUÍMICA (EM);Prof. A\n"
+                          /* ok: semestre que termina no ano seguinte */
+                          "4;1;AULA;1;2026-11-16;2027-03-05;SEG;10:30;12:10;"
                           "QUÍMICA (EM);Prof. A\n");
   CHECK(pers_carregar_reservas(ARQ_RES, &r, &n, &rel) == PERS_OK);
-  CHECK(n == 1 && rel.linhas_invalidas == 2);
+  CHECK(n == 2 && rel.linhas_invalidas == 2);
   CHECK(r != NULL && r[0].id == 2 && r[0].data.dia == 16 &&
         r[0].dataFim.dia == 31);
+  CHECK(r != NULL && r[1].id == 4 && r[1].dataFim.dia == 5 &&
+        r[1].dataFim.mes == 3 && r[1].dataFim.ano == 2027);
   pers_liberar(r);
   limpar(ARQ_RES);
 }
@@ -638,50 +646,28 @@ static void test_muitos_registros(void) {
   limpar(ARQ_RES);
 }
 
-/* Carrega os dados reais da planilha 2026.2 e confere que nada se perde. */
+/* Carrega as salas reais de 2026.2 e confere que nada se perde.
+   (As aulas nao ficam mais em dados_exemplo: entram pela importacao do PDF.) */
 static void test_dados_reais_2026_2(void) {
   Sala *s = NULL, *s2 = NULL;
-  Reserva *r = NULL, *r2 = NULL;
-  size_t ns = 0, nr = 0, ns2 = 0, nr2 = 0, i, j;
+  size_t ns = 0, ns2 = 0, i;
   PersRelatorio rel;
-  int refs_ok = 1, iguais = 1;
+  int iguais = 1;
 
   CHECK(pers_carregar_salas(DADOS_DIR "salas.csv", &s, &ns, &rel) == PERS_OK);
   CHECK(!rel.arquivo_ausente && rel.linhas_invalidas == 0 && ns == 42);
 
-  CHECK(pers_carregar_reservas(DADOS_DIR "reservas.csv", &r, &nr, &rel) ==
-        PERS_OK);
-  CHECK(!rel.arquivo_ausente && rel.linhas_invalidas == 0 && nr == 794);
-
-  /* toda reserva aponta para uma sala existente */
-  for (i = 0; i < nr; i++) {
-    int achou = 0;
-    for (j = 0; j < ns && !achou; j++)
-      achou = r[i].idSala == s[j].id;
-    refs_ok = refs_ok && achou;
-  }
-  CHECK(refs_ok);
-
-  /* salvar e carregar de novo devolve exatamente os mesmos dados */
+  /* salvar e carregar de novo devolve exatamente as mesmas salas */
   limpar(ARQ_SAL);
-  limpar(ARQ_RES);
   CHECK(pers_salvar_salas(ARQ_SAL, s, ns) == PERS_OK);
-  CHECK(pers_salvar_reservas(ARQ_RES, r, nr) == PERS_OK);
   CHECK(pers_carregar_salas(ARQ_SAL, &s2, &ns2, NULL) == PERS_OK && ns2 == ns);
-  CHECK(pers_carregar_reservas(ARQ_RES, &r2, &nr2, NULL) == PERS_OK &&
-        nr2 == nr);
   for (i = 0; s2 && i < ns2 && i < ns; i++)
     iguais = iguais && salas_iguais(&s[i], &s2[i]);
-  for (i = 0; r2 && i < nr2 && i < nr; i++)
-    iguais = iguais && reservas_iguais(&r[i], &r2[i]);
   CHECK(iguais);
 
   pers_liberar(s);
-  pers_liberar(r);
   pers_liberar(s2);
-  pers_liberar(r2);
   limpar(ARQ_SAL);
-  limpar(ARQ_RES);
 }
 
 static void test_migrar_txt_para_csv(void) {

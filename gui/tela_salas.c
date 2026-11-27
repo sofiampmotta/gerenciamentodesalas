@@ -74,7 +74,10 @@ static void preencher_lista(TelaSalas *t) {
   for (int i = 0; i < g_n_salas; i++) {
     SalaVista *s = &g_salas[i];
     char lug[16];
-    g_snprintf(lug, sizeof lug, "%d", s->lugares);
+    if (s->lugares > 0)
+      g_snprintf(lug, sizeof lug, "%d", s->lugares);
+    else
+      g_strlcpy(lug, "—", sizeof lug); // capacidade não informada
     GtkWidget *caixa =
         linha_tabela(s->nome, s->local, lug, s->projetor ? "Sim" : "Não",
                      s->acessivel ? "Sim" : "Não");
@@ -306,7 +309,9 @@ GtkWidget *tela_salas_criar(Estado *e) {
   t->campo_local = gtk_entry_new();
   gtk_entry_set_max_length(GTK_ENTRY(t->campo_local), 30);
   gtk_widget_set_hexpand(t->campo_local, TRUE);
-  t->spin_lugares = gtk_spin_button_new_with_range(1, 1000, 1);
+  // 0 = capacidade não informada (antes o mínimo era 1, e editar uma sala
+  // com capacidade 0 trocava o valor para 1 sem ninguém pedir)
+  t->spin_lugares = gtk_spin_button_new_with_range(0, 1000, 1);
   t->chk_projetor = gtk_check_button_new_with_label("Projetor");
   t->chk_acessivel =
       gtk_check_button_new_with_label("Acessível (rampa, térreo ou elevador)");

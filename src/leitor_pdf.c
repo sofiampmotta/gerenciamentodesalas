@@ -325,6 +325,20 @@ static Data primeira_data_do_dia(Data inicio, Dia dia) {
   return inicio;
 }
 
+// Copia no maximo 'max' bytes de 'origem' sem cortar uma letra acentuada
+// no meio (em UTF-8, letras como "Ã" ocupam 2 bytes).
+static void copiar_sem_cortar(char *destino, const char *origem, size_t max) {
+  size_t n = strlen(origem);
+  if (n > max) {
+    n = max;
+    // volta enquanto o byte seguinte for continuacao de uma letra (10xxxxxx)
+    while (n > 0 && ((unsigned char)origem[n] & 0xC0) == 0x80)
+      n--;
+  }
+  memcpy(destino, origem, n);
+  destino[n] = '\0';
+}
+
 static Reserva criar_reserva(const TurmaPDF *turma, int idSala, Dia dia,
                              int inicio, int fim, Data dataInicio,
                              Data dataFim) {
@@ -341,11 +355,17 @@ static Reserva criar_reserva(const TurmaPDF *turma, int idSala, Dia dia,
   r.horario.comeco = inicio;
   r.horario.fim = fim;
 
-  snprintf(r.descricao, sizeof(r.descricao), // snprintf ao invés de imprimir no
-                                             // terminal, escreve em uma string
-           "%.31s - %.15s", turma->componente, turma->turma);
+  // Descricao: "COMPONENTE - TURMA". A turma sempre aparece inteira; o nome
+  // da disciplina usa todo o espaco que sobrar.
+  char turmaTxt[16];
+  copiar_sem_cortar(turmaTxt, turma->turma, 15);
+  size_t espaco = sizeof(r.descricao) - 1 - strlen(turmaTxt) - 3;
+  copiar_sem_cortar(r.descricao, turma->componente, espaco);
+  strcat(r.descricao, " - "); // sempre cabe: o espaco ja foi descontado
+  strcat(r.descricao, turmaTxt);
 
-  snprintf(r.responsavel, sizeof(r.responsavel), "%.79s", turma->professor);
+  copiar_sem_cortar(r.responsavel, turma->professor,
+                    sizeof(r.responsavel) - 1);
 
   return r;
 }
@@ -478,12 +498,14 @@ int lerPDF(const char *caminho, TurmaPDF **resultado, size_t *quantidade) {
 
   if (erro_leitura || status != 0) {
     free(turmas);
-    return 0;
+    // Se o PDF passou pelo pdftotext e deu erro, o problema e a leitura do
+    // PDF (por exemplo, o pdftotext nao esta instalado), e nao o formato.
+    return is_pipe ? LEITOR_SEM_PDF : LEITOR_ERRO;
   }
 
   if (count == 0) {
     free(turmas);
-    return 0;
+    return LEITOR_ERRO;
   }
   *resultado = turmas;
   *quantidade = count;
@@ -494,12 +516,14 @@ int lerPDF(const char *caminho, TurmaPDF **resultado, size_t *quantidade) {
 int converter_turmas_reservas(const Aplicacao *app, const TurmaPDF *turmas,
                               size_t quantidadeTurmas, Data dataInicio,
                               Data dataFim, Reserva **resultado,
-                              size_t *quantidadeReservas) {
+                              size_t *quantidadeReservas, size_t *ignorados) {
   if (!app || !turmas || !resultado || !quantidadeReservas)
     return 0;
 
   *resultado = NULL;
   *quantidadeReservas = 0;
+  if (ignorados)
+    *ignorados = 0;
 
   size_t total = 0;
 
@@ -529,42 +553,51 @@ int converter_turmas_reservas(const Aplicacao *app, const TurmaPDF *turmas,
       Dia dia;
       int idSala;
 
+      // Sala nao cadastrada ou dia invalido: pula so este horario
       if (!converter_dia(h->dia, &dia) ||
           !buscar_id_sala(app, h->sala, &idSala)) {
-        fprintf(stderr, "Dia ou sala invalida: %s | %s\n", h->dia, h->sala);
-
-        free(reservas);
-        return 0;
+        fprintf(stderr, "Ignorado (dia ou sala invalida): %s | %s | %s\n",
+                t->componente, h->dia, h->sala);
+        if (ignorados)
+          (*ignorados)++;
+        continue;
       }
 
+      // Primeiro confere todos os intervalos; se algum estiver errado,
+      // pula o horario inteiro
+      bool intervalos_ok = h->num_intervalos > 0;
+      int ultimoFim = -1;
+      for (int k = 0; k < h->num_intervalos && intervalos_ok; k++) {
+        int inicio, fim;
+        if (!converter_intervalo(h->intervalos[k], &inicio, &fim) ||
+            inicio < ultimoFim)
+          intervalos_ok = false;
+        else
+          ultimoFim = fim;
+      }
+      if (!intervalos_ok) {
+        fprintf(stderr, "Ignorado (horario invalido): %s | %s\n",
+                t->componente, h->dia);
+        if (ignorados)
+          (*ignorados)++;
+        continue;
+      }
+
+      // Junta intervalos seguidos (07:10-08:00 + 08:00-08:50) num bloco so
       int inicioBloco, fimBloco;
-
-      if (h->num_intervalos <= 0 ||
-          !converter_intervalo(h->intervalos[0], &inicioBloco, &fimBloco)) {
-        free(reservas);
-        return 0;
-      }
+      converter_intervalo(h->intervalos[0], &inicioBloco, &fimBloco);
 
       for (int k = 1; k < h->num_intervalos; k++) {
         int inicio, fim;
-
-        if (!converter_intervalo(h->intervalos[k], &inicio, &fim)) {
-          free(reservas);
-          return 0;
-        }
+        converter_intervalo(h->intervalos[k], &inicio, &fim);
 
         if (inicio == fimBloco) {
           fimBloco = fim;
-        } else if (inicio > fimBloco) {
+        } else {
           reservas[count++] = criar_reserva(t, idSala, dia, inicioBloco,
                                             fimBloco, dataInicio, dataFim);
-
           inicioBloco = inicio;
           fimBloco = fim;
-        } else {
-          fprintf(stderr, "Intervalos sobrepostos ou fora de ordem.\n");
-          free(reservas);
-          return 0;
         }
       }
 
@@ -590,12 +623,11 @@ static bool reservas_iguais(Reserva a, Reserva b) {
 }
 
 int importarPDF(Aplicacao *app, const char *caminho, Data inicio, Data fim,
-                size_t *importadas, size_t *duplicadas) {
-  if (!app || !caminho || !importadas || !duplicadas)
-    return 0;
+                ResumoImportacao *resumo) {
+  if (!app || !caminho || !resumo)
+    return LEITOR_ERRO;
 
-  *importadas = 0;
-  *duplicadas = 0;
+  memset(resumo, 0, sizeof *resumo);
 
   TurmaPDF *turmas = NULL;
   size_t quantidadeTurmas = 0;
@@ -603,16 +635,18 @@ int importarPDF(Aplicacao *app, const char *caminho, Data inicio, Data fim,
   Reserva *reservas = NULL;
   size_t quantidadeReservas = 0;
 
-  if (!lerPDF(caminho, &turmas, &quantidadeTurmas))
-    return 0;
+  int lido = lerPDF(caminho, &turmas, &quantidadeTurmas);
+  if (lido != LEITOR_OK)
+    return lido; // LEITOR_ERRO ou LEITOR_SEM_PDF
 
   int sucesso = converter_turmas_reservas(app, turmas, quantidadeTurmas, inicio,
-                                          fim, &reservas, &quantidadeReservas);
+                                          fim, &reservas, &quantidadeReservas,
+                                          &resumo->semSala);
 
   free(turmas);
 
   if (!sucesso)
-    return 0;
+    return LEITOR_ERRO;
 
   size_t validas = 0;
 
@@ -631,7 +665,7 @@ int importarPDF(Aplicacao *app, const char *caminho, Data inicio, Data fim,
         conflito = true;
     }
 
-    // Compara com outras reservas do mesmo PDF
+    // Compara com outras reservas do mesmo PDF que ja entraram
     for (size_t j = 0; j < validas; j++) {
       if (reservas_iguais(nova, reservas[j]))
         duplicada = true;
@@ -639,16 +673,16 @@ int importarPDF(Aplicacao *app, const char *caminho, Data inicio, Data fim,
         conflito = true;
     }
 
-    if (conflito) {
-      fprintf(stderr, "Conflito: %s | Sala ID: %d\n", nova.descricao,
-              nova.idSala);
-
-      free(reservas);
-      return 0;
+    if (duplicada) {
+      resumo->duplicadas++;
+      continue;
     }
 
-    if (duplicada) {
-      (*duplicadas)++;
+    // Conflito: pula so esta reserva e continua com as outras
+    if (conflito) {
+      fprintf(stderr, "Ignorado (conflito): %s | Sala ID: %d\n",
+              nova.descricao, nova.idSala);
+      resumo->conflitos++;
       continue;
     }
 
@@ -658,13 +692,13 @@ int importarPDF(Aplicacao *app, const char *caminho, Data inicio, Data fim,
   if (validas > 0) {
     if (!aplicacao_salvar_reservas(app, reservas, validas)) {
       free(reservas);
-      return 0;
+      return LEITOR_ERRO;
     }
   }
 
-  *importadas = validas;
+  resumo->importadas = validas;
 
   free(reservas);
 
-  return 1;
+  return LEITOR_OK;
 }

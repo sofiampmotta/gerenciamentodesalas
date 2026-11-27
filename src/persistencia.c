@@ -132,7 +132,8 @@ static int reserva_valida(const Reserva *r) {
   if (!bool_valido(r->isRecorrente))
     return 0;
 
-  // Recorrencias possuem um periodo de validade.
+  // Recorrencias valem da data de inicio ate o fim do semestre.
+  // O fim pode cair em qualquer dia, ate no ano seguinte.
   if (r->isRecorrente) {
     if (!data_valida(&r->data) || !data_valida(&r->dataFim))
       return 0;
@@ -141,8 +142,7 @@ static int reserva_valida(const Reserva *r) {
 
     int fim = r->dataFim.ano * 10000 + r->dataFim.mes * 100 + r->dataFim.dia;
 
-    if (fim < inicio || r->dataFim.dia != 31 || r->dataFim.mes != 12 ||
-        r->dataFim.ano != r->data.ano || diaDaSemana(r->data) != r->horario.dia)
+    if (fim < inicio || diaDaSemana(r->data) != r->horario.dia)
       return 0;
   } else if (!data_valida(&r->data) || !data_vazia(&r->dataFim)) {
     return 0;

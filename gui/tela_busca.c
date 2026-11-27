@@ -176,7 +176,10 @@ static GtkWidget *cartao_sala(TelaBusca *t, const SalaVista *sl,
   gtk_label_set_xalign(GTK_LABEL(nome), 0);
 
   GString *det = g_string_new(NULL);
-  g_string_append_printf(det, "%d lugares", sl->lugares);
+  if (sl->lugares > 0)
+    g_string_append_printf(det, "%d lugares", sl->lugares);
+  else
+    g_string_append(det, "Capacidade não informada");
   if (sl->projetor)
     g_string_append(det, "  ·  Projetor");
   if (sl->acessivel)
@@ -265,7 +268,8 @@ static void buscar(TelaBusca *t) {
 
   for (int s = 0; s < g_n_salas; s++) {
     const SalaVista *sl = &g_salas[s];
-    if (f.pessoas > sl->lugares) {
+    // Capacidade 0 = não informada: a sala continua aparecendo, com aviso
+    if (sl->lugares > 0 && f.pessoas > sl->lugares) {
       g_ptr_array_add(fora_cap, g_strdup_printf("%s tem %d lugares", sl->nome,
                                                 sl->lugares));
       continue;
@@ -353,10 +357,35 @@ static void buscar(TelaBusca *t) {
     g_string_append_printf(rodape, "Ocupadas nesse horário: %s. ", s);
     g_free(s);
   }
-  if (fora->len > 0) {
+  if (fora->len > 0 && fora->len <= 5) {
+    /* poucas salas: mostra o motivo de cada uma */
     char *s = juntar(fora);
     g_string_append_printf(rodape, "Fora do pedido: %s.", s);
     g_free(s);
+  } else if (fora->len > 5) {
+    /* muitas salas: mostra só um resumo, para não virar um parágrafo */
+    guint sem_proj = 0, sem_ace = 0;
+    for (guint i = 0; i < fora_rec->len; i++) {
+      const char *m = g_ptr_array_index(fora_rec, i);
+      if (g_str_has_suffix(m, "não tem projetor"))
+        sem_proj++;
+      else
+        sem_ace++;
+    }
+    g_string_append(rodape, "Fora do pedido:");
+    const char *sep = " ";
+    if (fora_cap->len > 0) {
+      g_string_append_printf(rodape, "%s%u não comportam %d pessoas", sep,
+                             fora_cap->len, f.pessoas);
+      sep = ", ";
+    }
+    if (sem_proj > 0) {
+      g_string_append_printf(rodape, "%s%u sem projetor", sep, sem_proj);
+      sep = ", ";
+    }
+    if (sem_ace > 0)
+      g_string_append_printf(rodape, "%s%u sem acessibilidade", sep, sem_ace);
+    g_string_append(rodape, ".");
   }
   if (rodape->len > 0) {
     GtkWidget *l = gtk_label_new(rodape->str);

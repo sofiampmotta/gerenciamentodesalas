@@ -291,7 +291,10 @@ static void montar_ocupacao(TelaVisao *t, const Filtro *f) {
     gtk_widget_set_size_request(info, 150, -1);
     gtk_box_append(GTK_BOX(info), rotulo(sl->nome, 0, FALSE, TRUE));
     char lug[24];
-    g_snprintf(lug, sizeof lug, "%d lugares", sl->lugares);
+    if (sl->lugares > 0)
+      g_snprintf(lug, sizeof lug, "%d lugares", sl->lugares);
+    else
+      g_strlcpy(lug, "— lugares", sizeof lug); // capacidade não informada
     GtkWidget *l2 = rotulo(lug, 0, FALSE, FALSE);
     gtk_widget_add_css_class(l2, "subtitulo");
     gtk_box_append(GTK_BOX(info), l2);
@@ -694,31 +697,50 @@ static void ao_confirmar_importacao(GtkDialog *dialog, int resposta,
 
     Aplicacao *app = aplicacao_padrao();
 
-    size_t importadas = 0;
-    size_t duplicadas = 0;
+    ResumoImportacao resumo;
 
-    int sucesso = importarPDF(app, imp->caminho, dataInicio, dataFim,
-                              &importadas, &duplicadas);
+    int resultado =
+        importarPDF(app, imp->caminho, dataInicio, dataFim, &resumo);
 
-    if (sucesso) {
+    if (resultado == LEITOR_OK) {
       dados_recarregar();
 
       imp->t->renderizado = FALSE;
       atualizar(imp->t);
       registrar_filtro_renderizado(imp->t);
 
-      char mensagem[200];
+      // Ex.: "780 reservas importadas. 14 com conflito e 2 com sala não
+      // cadastrada ficaram de fora."
+      GString *msg = g_string_new(NULL);
+      g_string_append_printf(msg, "%lu reservas importadas.",
+                             (unsigned long)resumo.importadas);
+      if (resumo.duplicadas > 0)
+        g_string_append_printf(msg, " %lu já existiam.",
+                               (unsigned long)resumo.duplicadas);
+      if (resumo.conflitos > 0 || resumo.semSala > 0) {
+        g_string_append(msg, " Ficaram de fora:");
+        if (resumo.conflitos > 0)
+          g_string_append_printf(msg, " %lu com conflito",
+                                 (unsigned long)resumo.conflitos);
+        if (resumo.conflitos > 0 && resumo.semSala > 0)
+          g_string_append(msg, " e");
+        if (resumo.semSala > 0)
+          g_string_append_printf(msg, " %lu com sala não cadastrada",
+                                 (unsigned long)resumo.semSala);
+        g_string_append(msg, ".");
+      }
 
-      g_snprintf(mensagem, sizeof mensagem,
-                 "%zu reservas importadas. "
-                 "%zu duplicadas ignoradas.",
-                 importadas, duplicadas);
-
-      interface_mensagem(imp->t->e, mensagem, FALSE);
+      interface_mensagem(imp->t->e, msg->str, FALSE);
+      g_string_free(msg, TRUE);
+    } else if (resultado == LEITOR_SEM_PDF) {
+      interface_mensagem(imp->t->e,
+                         "Não foi possível ler o PDF. Verifique se o "
+                         "pdftotext (Poppler) está instalado.",
+                         TRUE);
     } else {
       interface_mensagem(imp->t->e,
-                         "Falha na importação. Verifique o PDF, "
-                         "as salas e os conflitos.",
+                         "Falha na importação. O arquivo precisa ser o "
+                         "Relatório Turma/Horário da UPE.",
                          TRUE);
     }
   }
