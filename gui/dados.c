@@ -55,6 +55,8 @@ void dados_iniciar(void) {
     destino->lugares = origem->capacidade;
     destino->projetor = origem->hasProjetor;
     destino->acessivel = origem->isAcessivel;
+    destino->televisao = origem->hasTelevisao;
+    destino->computadores = origem->computador;
   }
 
   static const char *const tipos[] = {"Aula", "Monitoria", "Extensão", "Evento",

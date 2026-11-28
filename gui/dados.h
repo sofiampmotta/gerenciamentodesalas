@@ -12,6 +12,8 @@ typedef struct {
     int  lugares;
     int  projetor;
     int  acessivel;
+    int  televisao;
+    int  computadores;
 } SalaVista;
 
 typedef struct {

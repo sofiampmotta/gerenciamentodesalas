@@ -14,6 +14,8 @@ typedef struct {
   GtkWidget *spin_lugares;
   GtkWidget *chk_projetor;
   GtkWidget *chk_acessivel;
+  GtkWidget *chk_televisao;
+  GtkWidget *spin_computadores;
 } TelaSalas;
 
 static void aplicar_estilo(void) {
@@ -56,13 +58,16 @@ static GtkWidget *celula(const char *texto, int largura) {
 }
 
 static GtkWidget *linha_tabela(const char *a, const char *b, const char *c,
-                               const char *d, const char *f) {
+                               const char *d, const char *f, const char *g,
+                               const char *h) {
   GtkWidget *caixa = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
   gtk_box_append(GTK_BOX(caixa), celula(a, 140));
   gtk_box_append(GTK_BOX(caixa), celula(b, 220));
   gtk_box_append(GTK_BOX(caixa), celula(c, 90));
   gtk_box_append(GTK_BOX(caixa), celula(d, 90));
   gtk_box_append(GTK_BOX(caixa), celula(f, 90));
+  gtk_box_append(GTK_BOX(caixa), celula(g, 90));
+  gtk_box_append(GTK_BOX(caixa), celula(h, 120));
   return caixa;
 }
 
@@ -73,14 +78,16 @@ static void preencher_lista(TelaSalas *t) {
 
   for (int i = 0; i < g_n_salas; i++) {
     SalaVista *s = &g_salas[i];
-    char lug[16];
+    char lug[16], pcs[16];
     if (s->lugares > 0)
       g_snprintf(lug, sizeof lug, "%d", s->lugares);
     else
       g_strlcpy(lug, "—", sizeof lug); // capacidade não informada
+    g_snprintf(pcs, sizeof pcs, "%d", s->computadores);
     GtkWidget *caixa =
         linha_tabela(s->nome, s->local, lug, s->projetor ? "Sim" : "Não",
-                     s->acessivel ? "Sim" : "Não");
+                     s->acessivel ? "Sim" : "Não", s->televisao ? "Sim" : "Não",
+                     pcs);
     gtk_widget_add_css_class(gtk_widget_get_first_child(caixa), "nome-sala");
     GtkWidget *row = gtk_list_box_row_new();
     gtk_list_box_row_set_child(GTK_LIST_BOX_ROW(row), caixa);
@@ -101,6 +108,9 @@ static void mostrar_sala(TelaSalas *t, int i) {
   gtk_spin_button_set_value(GTK_SPIN_BUTTON(t->spin_lugares), s->lugares);
   gtk_check_button_set_active(GTK_CHECK_BUTTON(t->chk_projetor), s->projetor);
   gtk_check_button_set_active(GTK_CHECK_BUTTON(t->chk_acessivel), s->acessivel);
+  gtk_check_button_set_active(GTK_CHECK_BUTTON(t->chk_televisao), s->televisao);
+  gtk_spin_button_set_value(GTK_SPIN_BUTTON(t->spin_computadores),
+                            s->computadores);
 }
 
 static void formulario_novo(TelaSalas *t) {
@@ -110,6 +120,8 @@ static void formulario_novo(TelaSalas *t) {
   gtk_spin_button_set_value(GTK_SPIN_BUTTON(t->spin_lugares), 30);
   gtk_check_button_set_active(GTK_CHECK_BUTTON(t->chk_projetor), FALSE);
   gtk_check_button_set_active(GTK_CHECK_BUTTON(t->chk_acessivel), FALSE);
+  gtk_check_button_set_active(GTK_CHECK_BUTTON(t->chk_televisao), FALSE);
+  gtk_spin_button_set_value(GTK_SPIN_BUTTON(t->spin_computadores), 0);
 }
 
 static void ao_selecionar(GtkListBox *lista, GtkListBoxRow *row,
@@ -160,12 +172,12 @@ static void ao_salvar(GtkButton *b, gpointer dados) {
       erro = g_strdup("O nome da sala excede o limite permitido.");
     }
 
-    for (int i = 0; i < g_n_salas; i++) {
-      if (!erro && i != t->selecionado &&
-          g_ascii_strcasecmp(g_salas[i].nome, nome) == 0) {
-        erro = g_strdup_printf("Já existe uma sala chamada %s.", nome);
-        break;
-      }
+    // "A03" e "A-03" contam como a mesma sala
+    if (!erro) {
+      int idAtual = t->selecionado >= 0 ? g_salas[t->selecionado].id : 0;
+      Sala *parecida = aplicacao_buscar_sala_por_nome(app, nome, idAtual);
+      if (parecida != NULL)
+        erro = g_strdup_printf("Já existe a sala %s.", parecida->nome);
     }
     if (!erro && t->selecionado >= 0) {
       existente = aplicacao_buscar_sala(app, g_salas[t->selecionado].id);
@@ -192,6 +204,10 @@ static void ao_salvar(GtkButton *b, gpointer dados) {
             gtk_check_button_get_active(GTK_CHECK_BUTTON(t->chk_projetor));
         sala.isAcessivel =
             gtk_check_button_get_active(GTK_CHECK_BUTTON(t->chk_acessivel));
+        sala.hasTelevisao =
+            gtk_check_button_get_active(GTK_CHECK_BUTTON(t->chk_televisao));
+        sala.computador = gtk_spin_button_get_value_as_int(
+            GTK_SPIN_BUTTON(t->spin_computadores));
 
         int salvou = existente != NULL
                          ? aplicacao_editar_sala(app, sala.id, sala)
@@ -224,6 +240,10 @@ static void ao_salvar(GtkButton *b, gpointer dados) {
   s->projetor = gtk_check_button_get_active(GTK_CHECK_BUTTON(t->chk_projetor));
   s->acessivel =
       gtk_check_button_get_active(GTK_CHECK_BUTTON(t->chk_acessivel));
+  s->televisao =
+      gtk_check_button_get_active(GTK_CHECK_BUTTON(t->chk_televisao));
+  s->computadores =
+      gtk_spin_button_get_value_as_int(GTK_SPIN_BUTTON(t->spin_computadores));
   if (t->selecionado < 0)
     g_n_salas++;
 
@@ -282,7 +302,8 @@ GtkWidget *tela_salas_criar(Estado *e) {
 
   /* tabela */
   GtkWidget *cab =
-      linha_tabela("Sala", "Local", "Lugares", "Projetor", "Acessível");
+      linha_tabela("Sala", "Local", "Lugares", "Projetor", "Acessível",
+                   "Televisão", "Computadores");
   gtk_widget_add_css_class(cab, "cabecalho-tabela");
   gtk_box_append(GTK_BOX(pagina), cab);
 
@@ -315,6 +336,8 @@ GtkWidget *tela_salas_criar(Estado *e) {
   t->chk_projetor = gtk_check_button_new_with_label("Projetor");
   t->chk_acessivel =
       gtk_check_button_new_with_label("Acessível (rampa, térreo ou elevador)");
+  t->chk_televisao = gtk_check_button_new_with_label("Televisão");
+  t->spin_computadores = gtk_spin_button_new_with_range(0, 200, 1);
 
   GtkWidget *grade = gtk_grid_new();
   gtk_grid_set_column_spacing(GTK_GRID(grade), 18);
@@ -322,14 +345,17 @@ GtkWidget *tela_salas_criar(Estado *e) {
   gtk_grid_attach(GTK_GRID(grade), rotulo_campo("Nome"), 0, 0, 1, 1);
   gtk_grid_attach(GTK_GRID(grade), rotulo_campo("Local"), 1, 0, 1, 1);
   gtk_grid_attach(GTK_GRID(grade), rotulo_campo("Lugares"), 2, 0, 1, 1);
+  gtk_grid_attach(GTK_GRID(grade), rotulo_campo("Computadores"), 3, 0, 1, 1);
   gtk_grid_attach(GTK_GRID(grade), t->campo_nome, 0, 1, 1, 1);
   gtk_grid_attach(GTK_GRID(grade), t->campo_local, 1, 1, 1, 1);
   gtk_grid_attach(GTK_GRID(grade), t->spin_lugares, 2, 1, 1, 1);
-  gtk_grid_attach(GTK_GRID(grade), rotulo_campo("Recursos"), 0, 2, 3, 1);
+  gtk_grid_attach(GTK_GRID(grade), t->spin_computadores, 3, 1, 1, 1);
+  gtk_grid_attach(GTK_GRID(grade), rotulo_campo("Recursos"), 0, 2, 4, 1);
   GtkWidget *recursos = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 24);
   gtk_box_append(GTK_BOX(recursos), t->chk_projetor);
   gtk_box_append(GTK_BOX(recursos), t->chk_acessivel);
-  gtk_grid_attach(GTK_GRID(grade), recursos, 0, 3, 3, 1);
+  gtk_box_append(GTK_BOX(recursos), t->chk_televisao);
+  gtk_grid_attach(GTK_GRID(grade), recursos, 0, 3, 4, 1);
   gtk_box_append(GTK_BOX(form), grade);
 
   GtkWidget *botoes = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);

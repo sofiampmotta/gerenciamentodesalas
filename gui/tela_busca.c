@@ -11,12 +11,13 @@
 
 typedef struct {
   Estado *e;
-  GtkWidget *data, *h_ini, *h_fim, *pessoas, *c_proj, *c_ace;
+  GtkWidget *data, *h_ini, *h_fim, *pessoas, *c_proj, *c_ace, *c_tv;
+  GtkWidget *computadores;
   GtkWidget *resultados, *rolagem_resultados;
 } TelaBusca;
 
 typedef struct {
-  int dia, ini, fim, pessoas, proj, ace;
+  int dia, ini, fim, pessoas, proj, ace, tv, computadores;
 } Filtros;
 typedef struct {
   TelaBusca *t;
@@ -95,6 +96,9 @@ static void ler_filtros(TelaBusca *t, Filtros *f) {
   f->pessoas = gtk_spin_button_get_value_as_int(GTK_SPIN_BUTTON(t->pessoas));
   f->proj = gtk_check_button_get_active(GTK_CHECK_BUTTON(t->c_proj));
   f->ace = gtk_check_button_get_active(GTK_CHECK_BUTTON(t->c_ace));
+  f->tv = gtk_check_button_get_active(GTK_CHECK_BUTTON(t->c_tv));
+  f->computadores =
+      gtk_spin_button_get_value_as_int(GTK_SPIN_BUTTON(t->computadores));
 }
 
 /* ---- faixa do dia de cada sala ---- */
@@ -184,6 +188,10 @@ static GtkWidget *cartao_sala(TelaBusca *t, const SalaVista *sl,
     g_string_append(det, "  ·  Projetor");
   if (sl->acessivel)
     g_string_append(det, "  ·  Acessível");
+  if (sl->televisao)
+    g_string_append(det, "  ·  Televisão");
+  if (sl->computadores > 0)
+    g_string_append_printf(det, "  ·  %d computadores", sl->computadores);
   GtkWidget *detalhes = gtk_label_new(det->str);
   g_string_free(det, TRUE);
   gtk_widget_add_css_class(detalhes, "subtitulo");
@@ -266,6 +274,7 @@ static void buscar(TelaBusca *t) {
   GPtrArray *fora_cap = g_ptr_array_new_with_free_func(g_free);
   GPtrArray *fora_rec = g_ptr_array_new_with_free_func(g_free);
 
+  guint sem_proj = 0, sem_ace = 0, sem_tv = 0, sem_pc = 0;
   for (int s = 0; s < g_n_salas; s++) {
     const SalaVista *sl = &g_salas[s];
     // Capacidade 0 = não informada: a sala continua aparecendo, com aviso
@@ -275,13 +284,27 @@ static void buscar(TelaBusca *t) {
       continue;
     }
     n_cabem++;
-    if ((f.proj && !sl->projetor) || (f.ace && !sl->acessivel)) {
-      if (f.proj && !sl->projetor)
-        g_ptr_array_add(fora_rec,
-                        g_strdup_printf("%s não tem projetor", sl->nome));
-      else
-        g_ptr_array_add(fora_rec,
-                        g_strdup_printf("%s não é acessível", sl->nome));
+    // Recursos: guarda o primeiro motivo de cada sala que ficou de fora
+    if (f.proj && !sl->projetor) {
+      g_ptr_array_add(fora_rec, g_strdup_printf("%s não tem projetor", sl->nome));
+      sem_proj++;
+      continue;
+    }
+    if (f.ace && !sl->acessivel) {
+      g_ptr_array_add(fora_rec, g_strdup_printf("%s não é acessível", sl->nome));
+      sem_ace++;
+      continue;
+    }
+    if (f.tv && !sl->televisao) {
+      g_ptr_array_add(fora_rec,
+                      g_strdup_printf("%s não tem televisão", sl->nome));
+      sem_tv++;
+      continue;
+    }
+    if (sl->computadores < f.computadores) {
+      g_ptr_array_add(fora_rec, g_strdup_printf("%s tem %d computadores",
+                                                sl->nome, sl->computadores));
+      sem_pc++;
       continue;
     }
     n_rec++;
@@ -323,10 +346,15 @@ static void buscar(TelaBusca *t) {
     g_strlcpy(leg, "cabe 1 pessoa", sizeof leg);
   else
     g_snprintf(leg, sizeof leg, "cabem %d pessoas", f.pessoas);
-  const char *leg_rec = (f.proj && f.ace) ? "têm projetor e acessibilidade"
-                        : f.proj          ? "têm projetor"
-                        : f.ace           ? "são acessíveis"
-                                          : "atendem aos recursos";
+  const char *leg_rec = "atendem aos recursos";
+  if (!f.tv && f.computadores == 0) {
+    if (f.proj && f.ace)
+      leg_rec = "têm projetor e acessibilidade";
+    else if (f.proj)
+      leg_rec = "têm projetor";
+    else if (f.ace)
+      leg_rec = "são acessíveis";
+  }
   estatistica(linha, g_n_salas, "salas");
   estatistica(linha, n_cabem, leg);
   estatistica(linha, n_rec, leg_rec);
@@ -364,14 +392,6 @@ static void buscar(TelaBusca *t) {
     g_free(s);
   } else if (fora->len > 5) {
     /* muitas salas: mostra só um resumo, para não virar um parágrafo */
-    guint sem_proj = 0, sem_ace = 0;
-    for (guint i = 0; i < fora_rec->len; i++) {
-      const char *m = g_ptr_array_index(fora_rec, i);
-      if (g_str_has_suffix(m, "não tem projetor"))
-        sem_proj++;
-      else
-        sem_ace++;
-    }
     g_string_append(rodape, "Fora do pedido:");
     const char *sep = " ";
     if (fora_cap->len > 0) {
@@ -383,8 +403,17 @@ static void buscar(TelaBusca *t) {
       g_string_append_printf(rodape, "%s%u sem projetor", sep, sem_proj);
       sep = ", ";
     }
-    if (sem_ace > 0)
+    if (sem_ace > 0) {
       g_string_append_printf(rodape, "%s%u sem acessibilidade", sep, sem_ace);
+      sep = ", ";
+    }
+    if (sem_tv > 0) {
+      g_string_append_printf(rodape, "%s%u sem televisão", sep, sem_tv);
+      sep = ", ";
+    }
+    if (sem_pc > 0)
+      g_string_append_printf(rodape, "%s%u com menos de %d computadores", sep,
+                             sem_pc, f.computadores);
     g_string_append(rodape, ".");
   }
   if (rodape->len > 0) {
@@ -449,12 +478,15 @@ GtkWidget *tela_busca_criar(Estado *e) {
   t->c_ace = gtk_check_button_new_with_label(
       "Acessibilidade (rampa, térreo ou elevador)");
   gtk_check_button_set_active(GTK_CHECK_BUTTON(t->c_proj), TRUE);
+  t->c_tv = gtk_check_button_new_with_label("Televisão");
+  t->computadores = spin(0, 200, 0);
 
   GtkWidget *data = t->data;
 
   GtkWidget *recursos = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 24);
   gtk_box_append(GTK_BOX(recursos), t->c_proj);
   gtk_box_append(GTK_BOX(recursos), t->c_ace);
+  gtk_box_append(GTK_BOX(recursos), t->c_tv);
 
   GtkWidget *b_buscar = gtk_button_new_with_label("Buscar");
   gtk_widget_add_css_class(b_buscar, "primario");
@@ -469,13 +501,15 @@ GtkWidget *tela_busca_criar(Estado *e) {
   gtk_grid_attach(GTK_GRID(grade), rotulo("Das"), 1, 0, 1, 1);
   gtk_grid_attach(GTK_GRID(grade), rotulo("Às"), 2, 0, 1, 1);
   gtk_grid_attach(GTK_GRID(grade), rotulo("Pessoas"), 3, 0, 1, 1);
+  gtk_grid_attach(GTK_GRID(grade), rotulo("Computadores (mín.)"), 4, 0, 1, 1);
   gtk_grid_attach(GTK_GRID(grade), data, 0, 1, 1, 1);
   gtk_grid_attach(GTK_GRID(grade), t->h_ini, 1, 1, 1, 1);
   gtk_grid_attach(GTK_GRID(grade), t->h_fim, 2, 1, 1, 1);
   gtk_grid_attach(GTK_GRID(grade), t->pessoas, 3, 1, 1, 1);
-  gtk_grid_attach(GTK_GRID(grade), rotulo("Recursos"), 0, 2, 3, 1);
-  gtk_grid_attach(GTK_GRID(grade), recursos, 0, 3, 3, 1);
-  gtk_grid_attach(GTK_GRID(grade), b_buscar, 3, 3, 1, 1);
+  gtk_grid_attach(GTK_GRID(grade), t->computadores, 4, 1, 1, 1);
+  gtk_grid_attach(GTK_GRID(grade), rotulo("Recursos"), 0, 2, 4, 1);
+  gtk_grid_attach(GTK_GRID(grade), recursos, 0, 3, 4, 1);
+  gtk_grid_attach(GTK_GRID(grade), b_buscar, 4, 3, 1, 1);
   gtk_box_append(GTK_BOX(pagina), grade);
 
   /* resultados */
