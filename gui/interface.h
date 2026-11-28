@@ -11,6 +11,7 @@ typedef struct {
     GtkWidget *rotulo_nome;
     GtkWidget *rotulo_setor;
     GtkWidget *botoes_menu[6];
+    GtkWidget *botao_perfil;
 } Estado;
 
 int  interface_iniciar(int argc, char **argv);
@@ -39,6 +40,8 @@ GtkWidget *logo_poli_criar(void);
 void visual_aplicar(void);
 void nova_reserva_editar(int id);
 void tela_reservas_focar_busca(void);
+void tutorial_iniciar(Estado *e);
+void tutorial_se_primeira_vez(Estado *e);
 /* Abre a janela "Cancelar um dia". Devolve a janela (ou NULL). */
 GtkWidget *cancelar_dia_abrir(Estado *e, int idReserva);
 void acao_log(const char *fmt, ...) G_GNUC_PRINTF(1, 2);

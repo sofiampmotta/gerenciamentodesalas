@@ -143,6 +143,13 @@ static void ao_salvar_perfil(GtkWidget *w, gpointer dados) {
   g_free(msg);
 }
 
+static void ao_ver_tutorial(GtkButton *b, gpointer dados) {
+  (void)b;
+  Perfil *p = (Perfil *)dados;
+  gtk_popover_popdown(GTK_POPOVER(p->popover));
+  tutorial_iniciar(p->e);
+}
+
 static void ao_cancelar_perfil(GtkButton *b, gpointer dados) {
   (void)b;
   gtk_popover_popdown(GTK_POPOVER(((Perfil *)dados)->popover));
@@ -197,6 +204,13 @@ static GtkWidget *criar_perfil(Estado *e) {
   gtk_box_append(GTK_BOX(botoes), b_salvar);
   gtk_box_append(GTK_BOX(botoes), b_cancelar);
   gtk_box_append(GTK_BOX(caixa), botoes);
+
+  GtkWidget *b_tutorial = gtk_button_new_with_label("Ver o tutorial");
+  gtk_widget_add_css_class(b_tutorial, "tutorial-pular");
+  gtk_widget_set_halign(b_tutorial, GTK_ALIGN_START);
+  gtk_widget_set_margin_top(b_tutorial, 4);
+  g_signal_connect(b_tutorial, "clicked", G_CALLBACK(ao_ver_tutorial), p);
+  gtk_box_append(GTK_BOX(caixa), b_tutorial);
 
   p->popover = gtk_popover_new();
   gtk_popover_set_child(GTK_POPOVER(p->popover), caixa);
@@ -290,6 +304,7 @@ static GtkWidget *criar_menu(Estado *e) {
   gtk_menu_button_set_direction(GTK_MENU_BUTTON(b_perfil), GTK_ARROW_RIGHT);
   gtk_menu_button_set_popover(GTK_MENU_BUTTON(b_perfil), criar_perfil(e));
   gtk_box_append(GTK_BOX(rodape), b_perfil);
+  e->botao_perfil = b_perfil;
 
   gtk_box_append(GTK_BOX(menu), rodape);
 
@@ -320,6 +335,14 @@ static gboolean ao_atalho_buscar(GtkWidget *widget, GVariant *args,
   (void)args;
   interface_ir_para((Estado *)dados, "reservas");
   tela_reservas_focar_busca();
+  return TRUE;
+}
+
+static gboolean ao_atalho_tutorial(GtkWidget *widget, GVariant *args,
+                                   gpointer dados) {
+  (void)widget;
+  (void)args;
+  tutorial_iniciar((Estado *)dados);
   return TRUE;
 }
 
@@ -410,17 +433,19 @@ static void ativar(GtkApplication *app, gpointer dados) {
 
   e->raiz = app_raiz;
   gtk_window_set_child(GTK_WINDOW(e->janela), e->raiz);
-  // atalhos de teclado: Ctrl+M minimiza, Ctrl+N abre nova reserva e
-  // Ctrl+F vai para a busca de reservas
+  // atalhos de teclado: Ctrl+M minimiza, Ctrl+N abre nova reserva,
+  // Ctrl+F vai para a busca de reservas e F1 abre o tutorial
   GtkEventController *atalhos = gtk_shortcut_controller_new();
   adicionar_atalho(atalhos, "<Control>m", ao_atalho_minimizar, e->janela);
   adicionar_atalho(atalhos, "<Control>n", ao_atalho_nova_reserva, e);
   adicionar_atalho(atalhos, "<Control>f", ao_atalho_buscar, e);
+  adicionar_atalho(atalhos, "F1", ao_atalho_tutorial, e);
   gtk_widget_add_controller(e->janela, atalhos);
   gtk_window_present(GTK_WINDOW(e->janela));
   g_signal_connect(e->janela, "notify::minimized",
                    G_CALLBACK(ao_notificar_minimizado), NULL);
   interface_mensagem(e, "POLI - Gestão de Ambientes", FALSE);
+  tutorial_se_primeira_vez(e);
 }
 
 int interface_iniciar(int argc, char **argv) {
