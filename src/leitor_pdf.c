@@ -144,8 +144,15 @@ static void parse_prof_line(const char *line, TurmaPDF *t) {
     has_ch = true;
   }
 
+  // o '*' so marca o professor principal no relatorio
+  size_t n = strlen(buf);
+  if (n > 0 && buf[n - 1] == '*')
+    buf[n - 1] = '\0';
+
+  // ';' nao pode: e o separador dos arquivos de dados, e a reserva inteira
+  // seria recusada ao salvar. Usa " / ", como na planilha da POLI.
   if (t->professor[0] != '\0') {
-    const char *sep = has_ch ? "; " : " ";
+    const char *sep = has_ch ? " / " : " ";
     strncat(t->professor, sep, sizeof(t->professor) - strlen(t->professor) - 1);
   }
   strncat(t->professor, buf, sizeof(t->professor) - strlen(t->professor) - 1);
@@ -181,6 +188,31 @@ static bool parse_horario_line(const char *line, HorarioPDF *h) {
 
   return h->num_intervalos > 0;
 }
+
+/* Nomes de sala longos quebram em varias linhas no PDF:
+ *   TER I08 - SALA DE
+ *   DESENHO
+ *   18:50-19:40 19:40-20:30
+ * Cada linha seguinte completa o nome ate chegarem os horarios. */
+static bool continuar_horario(const char *line, HorarioPDF *h) {
+  char buf[MAX_LINE];
+  strncpy(buf, line, sizeof(buf) - 1);
+  buf[sizeof(buf) - 1] = '\0';
+
+  for (char *tok = strtok(buf, " \t"); tok; tok = strtok(NULL, " \t")) {
+    if (is_time_slot(tok)) {
+      if (h->num_intervalos < MAX_SLOTS)
+        strncpy(h->intervalos[h->num_intervalos++], tok, 15);
+    } else if (h->num_intervalos == 0) {
+      strncat(h->sala, " ", sizeof(h->sala) - strlen(h->sala) - 1);
+      strncat(h->sala, tok, sizeof(h->sala) - strlen(h->sala) - 1);
+    }
+  }
+  return h->num_intervalos > 0;
+}
+
+static bool converter_dia(const char *texto, Dia *dia);
+
 static bool
 has_pdf_extension(const char *path) // vê os últimos 4 dígitos p/ ver se é .pdf
 {
@@ -320,7 +352,41 @@ static bool buscar_id_sala(const Aplicacao *app, const char *nome,
       encontrou = true;
     }
   }
+  if (encontrou)
+    return true;
 
+  // O relatorio as vezes traz a sala com descricao: "I08 - SALA DE DESENHO",
+  // "K08-LABORATORIO DE SEGURANCA". Tenta so o codigo do comeco (letras e
+  // numeros: I08, K08) e compara com as salas cadastradas.
+  char codigo[16];
+  int j = 0, letras = 0, numeros = 0;
+  for (int i = 0; nome[i] != '\0' && j < 15; i++) {
+    unsigned char c = nome[i];
+    if (isalpha(c) && numeros == 0) {
+      codigo[j++] = toupper(c);
+      letras++;
+    } else if (isdigit(c) && letras > 0) {
+      codigo[j++] = c;
+      numeros++;
+    } else if (c == '-' && numeros == 0) {
+      continue; // "I-08 ..." tambem vale
+    } else {
+      break;
+    }
+  }
+  codigo[j] = '\0';
+  if (letras == 0 || numeros == 0 || strcmp(codigo, nomePDF) == 0)
+    return false;
+
+  for (size_t i = 0; i < app->quantidadeSalas; i++) {
+    normalizar_sala(app->salas[i].nome, nomeSistema);
+    if (strcmp(codigo, nomeSistema) == 0) {
+      if (encontrou)
+        return false; // ambiguo: melhor deixar de fora
+      *idSala = app->salas[i].id;
+      encontrou = true;
+    }
+  }
   return encontrou;
 }
 
@@ -419,6 +485,8 @@ int lerPDF(const char *caminho, TurmaPDF **resultado, size_t *quantidade) {
   TurmaPDF current;
   memset(&current, 0, sizeof(TurmaPDF));
   bool has_current = false;
+  HorarioPDF pendente; // horario com nome de sala ainda incompleto
+  bool tem_pendente = false;
 
   char line[MAX_LINE];
   while (fgets(line, sizeof(line), in)) {
@@ -454,6 +522,7 @@ int lerPDF(const char *caminho, TurmaPDF **resultado, size_t *quantidade) {
       }
       memset(&current, 0, sizeof(TurmaPDF));
       has_current = true;
+      tem_pendente = false;
       state = STATE_READ_TURMA;
       continue;
     }
@@ -482,9 +551,25 @@ int lerPDF(const char *caminho, TurmaPDF **resultado, size_t *quantidade) {
       break;
 
     case STATE_READ_HORARIOS: {
-      HorarioPDF h;
-      if (parse_horario_line(line, &h) && current.num_horarios < MAX_DIAS) {
-        current.horarios[current.num_horarios++] = h;
+      char primeira[16] = "";
+      Dia dia;
+      sscanf(line, "%15s", primeira);
+
+      if (converter_dia(primeira, &dia)) {
+        // linha que comeca com o dia: horario novo
+        HorarioPDF h;
+        if (parse_horario_line(line, &h)) {
+          if (current.num_horarios < MAX_DIAS)
+            current.horarios[current.num_horarios++] = h;
+          tem_pendente = false;
+        } else {
+          pendente = h; // o nome da sala continua na proxima linha
+          tem_pendente = true;
+        }
+      } else if (tem_pendente && continuar_horario(line, &pendente)) {
+        if (current.num_horarios < MAX_DIAS)
+          current.horarios[current.num_horarios++] = pendente;
+        tem_pendente = false;
       }
       break;
     }
@@ -714,7 +799,8 @@ int importarPDF(Aplicacao *app, const char *caminho, Data inicio, Data fim,
   if (validas > 0) {
     if (!aplicacao_salvar_reservas(app, reservas, validas)) {
       free(reservas);
-      return LEITOR_ERRO;
+      // o arquivo foi lido; o problema foi gravar (nao e "formato invalido")
+      return LEITOR_ERRO_SALVAR;
     }
   }
 

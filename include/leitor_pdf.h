@@ -38,6 +38,7 @@ typedef struct
 #define LEITOR_OK 1
 #define LEITOR_ERRO 0        // arquivo em formato desconhecido ou sem turmas
 #define LEITOR_SEM_PDF (-1)  // nao foi possivel ler o PDF (pdftotext ausente?)
+#define LEITOR_ERRO_SALVAR (-2) // leu o PDF, mas nao conseguiu gravar as reservas
 
 // Converte as turmas em reservas recorrentes. Horarios com sala nao
 // cadastrada ou dia/horario invalido sao pulados e contados em 'ignorados'

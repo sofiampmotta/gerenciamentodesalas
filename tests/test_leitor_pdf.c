@@ -204,10 +204,69 @@ static void test_pdf_inexistente(void) {
   limpar();
 }
 
+/* Trechos reais do relatorio de Civil (PROGRAD), que antes davam "invalido":
+ *   - dois professores na mesma turma
+ *   - nome de sala comprido, quebrado em varias linhas
+ *   - sala com descricao depois do codigo ("I05 - SALA DE DESENHO")
+ *   - turma sem sala informada (fica de fora, sem travar o resto) */
+static const char *RELATORIO_CIVIL =
+    "TURMA VAGAS COMPONENTE CURRICULAR\n"
+    "BM 50 ARQU0001 - ARQUITETURA\n"
+    "PROFESSOR (ES) CARGA HORÁRIA MINISTRADA\n"
+    "BIANCA MARIA VASCONCELOS VALERIO* 60\n"
+    "PEDRO HENRIQUE CABRAL VALADARES 60\n"
+    "DIA DA SEMANA SALA HORÁRIO\n"
+    "SEG I05 - SALA DE\n"
+    "DESENHO\n"
+    "08:50-09:40 09:40-10:30\n"
+    "QUA I03 08:50-09:40 09:40-10:30\n"
+    "TURMA VAGAS COMPONENTE CURRICULAR\n"
+    "2C 50 MATM0024 - CÁLCULO DIFERENCIAL E INTEGRAL EM VÁRIAS VARIÁVEIS\n"
+    "PROFESSOR (ES) CARGA HORÁRIA MINISTRADA\n"
+    "MAURICIO COSTA GOLDFARB* 60\n"
+    "DIA DA SEMANA SALA HORÁRIO\n"
+    "SEG 07:10-08:00 08:00-08:50\n";
+
+static void test_relatorio_civil(void) {
+  Aplicacao app;
+  ResumoImportacao res;
+  Data inicio = {16, 11, 2026}, fim = {5, 3, 2027};
+
+  if (!iniciar_com_salas(&app)) {
+    CHECK(0);
+    return;
+  }
+  escrever_texto(ARQ_TXT, RELATORIO_CIVIL);
+
+  CHECK(importarPDF(&app, ARQ_TXT, inicio, fim, &res) == LEITOR_OK);
+  CHECK(res.importadas == 2); /* seg na I-05 e qua na I-03 */
+  CHECK(res.semSala == 1);    /* a turma 2C nao tem sala no relatorio */
+
+  int achouSeg = 0;
+  for (size_t i = 0; i < app.quantidadeReservas; i++) {
+    const Reserva *r = &app.reservas[i];
+    /* sem ';' (estragaria o arquivo) e sem o '*' do relatorio */
+    CHECK(strchr(r->responsavel, ';') == NULL);
+    CHECK(strchr(r->responsavel, '*') == NULL);
+    if (r->horario.dia == SEG) {
+      Sala *sala = aplicacao_buscar_sala(&app, r->idSala);
+      achouSeg = sala != NULL && strcmp(sala->nome, "I-05") == 0;
+      CHECK(strcmp(r->responsavel, "BIANCA MARIA VASCONCELOS VALERIO / "
+                                   "PEDRO HENRIQUE CABRAL VALADARES") == 0);
+    }
+  }
+  CHECK(achouSeg); /* "I05 - SALA DE DESENHO", em 3 linhas, virou I-05 */
+
+  aplicacao_finalizar(&app);
+  limpar();
+}
+
 int main(void) {
   printf("Testes do leitor de PDF:\n");
   printf("- test_importacao_parcial\n");
   test_importacao_parcial();
+  printf("- test_relatorio_civil\n");
+  test_relatorio_civil();
   printf("- test_formato_desconhecido\n");
   test_formato_desconhecido();
   printf("- test_pdf_inexistente\n");

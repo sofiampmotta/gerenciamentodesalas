@@ -821,6 +821,11 @@ static void ao_confirmar_importacao(GtkDialog *dialog, int resposta,
 
       interface_mensagem(imp->t->e, msg->str, FALSE);
       g_string_free(msg, TRUE);
+    } else if (resultado == LEITOR_ERRO_SALVAR) {
+      interface_mensagem(imp->t->e,
+                         "O PDF foi lido, mas não foi possível salvar as "
+                         "reservas. Nada foi importado.",
+                         TRUE);
     } else if (resultado == LEITOR_SEM_PDF) {
       interface_mensagem(imp->t->e,
                          "Não foi possível ler o PDF. Verifique se o "
