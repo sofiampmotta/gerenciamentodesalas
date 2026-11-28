@@ -17,6 +17,8 @@ typedef struct {
 int  interface_iniciar(int argc, char **argv);
 void interface_mensagem(Estado *e, const char *texto, gboolean erro);
 void interface_ir_para(Estado *e, const char *tela);
+/* Liga a busca de uma lista criada com gtk_drop_down_new_from_strings. */
+void lista_ligar_busca(GtkWidget *lista);
 /* Pergunta "tem certeza?"; ao_confirmar só roda se a pessoa clicar em botao. */
 void interface_confirmar(Estado *e, const char *titulo, const char *detalhe,
                          const char *botao, void (*ao_confirmar)(gpointer),

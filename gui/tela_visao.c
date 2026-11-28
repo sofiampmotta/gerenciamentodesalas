@@ -1074,7 +1074,7 @@ GtkWidget *tela_visao_criar(Estado *e) {
   t->tipo = gtk_drop_down_new_from_strings(TIPOS);
   const char *so_todos[] = {"Todos os ambientes", NULL};
   t->sala = gtk_drop_down_new_from_strings(so_todos);
-  gtk_drop_down_set_enable_search(GTK_DROP_DOWN(t->sala), TRUE);
+  lista_ligar_busca(t->sala);
 
   GtkWidget *filtros = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 18);
   gtk_widget_add_css_class(filtros, "card-visao");

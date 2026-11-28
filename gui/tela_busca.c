@@ -76,7 +76,7 @@ static GtkWidget *lista_horarios(int selecionado) {
   }
   ptrs[NUM_HORARIOS] = NULL;
   GtkWidget *d = gtk_drop_down_new_from_strings(ptrs);
-  gtk_drop_down_set_enable_search(GTK_DROP_DOWN(d), TRUE);
+  lista_ligar_busca(d);
   gtk_drop_down_set_selected(GTK_DROP_DOWN(d), selecionado);
   return d;
 }

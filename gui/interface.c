@@ -40,6 +40,20 @@ void interface_mensagem(Estado *e, const char *texto, gboolean erro) {
       g_timeout_add_seconds(3, limpar_mensagem_status, e->barra_status);
 }
 
+/* So enable_search nao basta: sem a expressao o GTK nao sabe em qual texto
+ * procurar, e a lista nao filtra nada ao digitar. */
+void lista_ligar_busca(GtkWidget *lista) {
+  gtk_drop_down_set_expression(
+      GTK_DROP_DOWN(lista),
+      gtk_property_expression_new(GTK_TYPE_STRING_OBJECT, NULL, "string"));
+#if GTK_CHECK_VERSION(4, 12, 0)
+  // acha "03" em "C-03", e nao so pelo comeco
+  gtk_drop_down_set_search_match_mode(GTK_DROP_DOWN(lista),
+                                      GTK_STRING_FILTER_MATCH_MODE_SUBSTRING);
+#endif
+  gtk_drop_down_set_enable_search(GTK_DROP_DOWN(lista), TRUE);
+}
+
 /* Janela "tem certeza?" usada antes de excluir. */
 typedef struct {
   void (*ao_confirmar)(gpointer);
