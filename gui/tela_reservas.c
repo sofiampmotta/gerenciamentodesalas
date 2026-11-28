@@ -21,6 +21,8 @@ static const char *DIAS_SEMANA[] = {
     "Segunda-feira", "Terça-feira", "Quarta-feira", "Quinta-feira",
     "Sexta-feira",   "Sábado",      "Domingo"};
 
+static TelaReservas *g_tela = NULL; // usado pelo atalho Ctrl+F
+
 static void ao_editar(GtkButton *b, gpointer dados);
 static void ao_excluir(GtkButton *b, gpointer dados);
 
@@ -244,6 +246,11 @@ static void ao_selecionar(GtkListBox *lista, GtkListBoxRow *linha,
   gtk_widget_set_sensitive(t->b_excluir, linha != NULL);
 }
 
+void tela_reservas_focar_busca(void) {
+  if (g_tela && g_tela->campo_busca)
+    gtk_widget_grab_focus(g_tela->campo_busca);
+}
+
 static void ao_mostrar(GtkWidget *w, gpointer dados) {
   (void)w;
   recarregar((TelaReservas *)dados);
@@ -256,6 +263,7 @@ static void ao_nova(GtkButton *b, gpointer dados) {
 
 GtkWidget *tela_reservas_criar(Estado *e) {
   TelaReservas *t = g_new0(TelaReservas, 1);
+  g_tela = t;
   t->e = e;
   t->ultimo_n = -1;
   estilo_reservas();
@@ -294,6 +302,7 @@ GtkWidget *tela_reservas_criar(Estado *e) {
   GtkWidget *b = gtk_button_new_with_label("Nova reserva");
   gtk_widget_add_css_class(b, "primario");
   gtk_widget_set_valign(b, GTK_ALIGN_START);
+  gtk_widget_set_tooltip_text(b, "Atalho: Ctrl+N");
   g_signal_connect(b, "clicked", G_CALLBACK(ao_nova), t);
 
   gtk_box_append(GTK_BOX(topo), textos);
@@ -305,7 +314,7 @@ GtkWidget *tela_reservas_criar(Estado *e) {
   // campo de busca sempre visivel; o X dentro dele limpa o texto
   t->campo_busca = gtk_search_entry_new();
   g_object_set(t->campo_busca, "placeholder-text",
-               "Buscar por aula, sala, professor ou tipo", NULL);
+               "Buscar por aula, sala, professor ou tipo  (Ctrl+F)", NULL);
   gtk_widget_set_hexpand(t->campo_busca, TRUE);
   g_signal_connect(t->campo_busca, "changed", G_CALLBACK(ao_filtro_mudou), t);
   gtk_box_append(GTK_BOX(pagina), t->campo_busca);

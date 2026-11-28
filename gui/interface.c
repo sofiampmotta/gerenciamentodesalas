@@ -192,6 +192,32 @@ static gboolean ao_atalho_minimizar(GtkWidget *widget, GVariant *args,
   return TRUE;
 }
 
+static gboolean ao_atalho_nova_reserva(GtkWidget *widget, GVariant *args,
+                                       gpointer dados) {
+  (void)widget;
+  (void)args;
+  interface_ir_para((Estado *)dados, "nova");
+  return TRUE;
+}
+
+static gboolean ao_atalho_buscar(GtkWidget *widget, GVariant *args,
+                                 gpointer dados) {
+  (void)widget;
+  (void)args;
+  interface_ir_para((Estado *)dados, "reservas");
+  tela_reservas_focar_busca();
+  return TRUE;
+}
+
+static void adicionar_atalho(GtkEventController *controle, const char *teclas,
+                             GtkShortcutFunc funcao, gpointer dados) {
+  GtkShortcut *atalho =
+      gtk_shortcut_new(gtk_shortcut_trigger_parse_string(teclas),
+                       gtk_callback_action_new(funcao, dados, NULL));
+  gtk_shortcut_controller_add_shortcut(GTK_SHORTCUT_CONTROLLER(controle),
+                                       atalho);
+}
+
 static void ao_notificar_minimizado(GObject *obj, GParamSpec *pspec,
                                     gpointer dados) {
   (void)pspec;
@@ -269,14 +295,13 @@ static void ativar(GtkApplication *app, gpointer dados) {
 
   e->raiz = app_raiz;
   gtk_window_set_child(GTK_WINDOW(e->janela), e->raiz);
-  GtkEventController *key_ctrl = gtk_shortcut_controller_new();
-  GtkShortcutTrigger *trigger = gtk_shortcut_trigger_parse_string("<Control>m");
-  GtkShortcutAction *action =
-      gtk_callback_action_new(ao_atalho_minimizar, e->janela, NULL);
-  GtkShortcut *shortcut = gtk_shortcut_new(trigger, action);
-  gtk_shortcut_controller_add_shortcut(GTK_SHORTCUT_CONTROLLER(key_ctrl),
-                                       shortcut);
-  gtk_widget_add_controller(e->janela, key_ctrl);
+  // atalhos de teclado: Ctrl+M minimiza, Ctrl+N abre nova reserva e
+  // Ctrl+F vai para a busca de reservas
+  GtkEventController *atalhos = gtk_shortcut_controller_new();
+  adicionar_atalho(atalhos, "<Control>m", ao_atalho_minimizar, e->janela);
+  adicionar_atalho(atalhos, "<Control>n", ao_atalho_nova_reserva, e);
+  adicionar_atalho(atalhos, "<Control>f", ao_atalho_buscar, e);
+  gtk_widget_add_controller(e->janela, atalhos);
   gtk_window_present(GTK_WINDOW(e->janela));
   g_signal_connect(e->janela, "notify::minimized",
                    G_CALLBACK(ao_notificar_minimizado), NULL);

@@ -37,6 +37,7 @@ void seletor_data_set(GtkWidget *w, int data);
 GtkWidget *logo_poli_criar(void);
 void visual_aplicar(void);
 void nova_reserva_editar(int id);
+void tela_reservas_focar_busca(void);
 void acao_log(const char *fmt, ...) G_GNUC_PRINTF(1, 2);
 const char *acao_hora(int min);
 int  dados_dia_hoje(void);
