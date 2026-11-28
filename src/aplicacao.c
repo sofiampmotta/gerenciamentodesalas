@@ -2,6 +2,7 @@
 #include "../include/alocacao.h"
 #include "../include/persistencia.h"
 
+#include <ctype.h>
 #include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -206,10 +207,42 @@ int aplicacao_buscar_conflito_reserva(const Aplicacao *app,
   return 0;
 }
 
+// Compara nomes de sala ignorando maiusculas, hifen, ponto e espaco.
+// Assim "A-03", "A03", "a 03" e "A.03" sao a mesma sala.
+static int nomes_sala_iguais(const char *a, const char *b) {
+  while (*a || *b) {
+    while (*a == '-' || *a == '.' || *a == ' ')
+      a++;
+    while (*b == '-' || *b == '.' || *b == ' ')
+      b++;
+    if (toupper((unsigned char)*a) != toupper((unsigned char)*b))
+      return 0;
+    if (*a == '\0')
+      return 1;
+    a++;
+    b++;
+  }
+  return 1;
+}
+
+Sala *aplicacao_buscar_sala_por_nome(Aplicacao *app, const char *nome,
+                                     int ignorarId) {
+  if (app == NULL || nome == NULL)
+    return NULL;
+  for (size_t i = 0; i < app->quantidadeSalas; i++) {
+    if (app->salas[i].id != ignorarId &&
+        nomes_sala_iguais(app->salas[i].nome, nome))
+      return &app->salas[i];
+  }
+  return NULL;
+}
+
 int aplicacao_salvar_sala(Aplicacao *app, Sala *dados) {
   if (app == NULL || dados == NULL || dados->id < 0 || dados->nome[0] == '\0' ||
       dados->capacidade < 0)
     return 0;
+  if (aplicacao_buscar_sala_por_nome(app, dados->nome, 0) != NULL)
+    return 0; // ja existe uma sala com esse nome
 
   if (app->quantidadeSalas >= (size_t)-1 / sizeof *app->salas)
     return 0;
@@ -252,6 +285,8 @@ int aplicacao_editar_sala(Aplicacao *app, int id, Sala dadosNovos) {
   Sala *sala = aplicacao_buscar_sala(app, id);
   if (sala == NULL)
     return 0;
+  if (aplicacao_buscar_sala_por_nome(app, dadosNovos.nome, id) != NULL)
+    return 0; // outra sala ja usa esse nome
 
   Sala antiga = *sala;
   dadosNovos.id = id;

@@ -474,6 +474,50 @@ static void test_servico_aplicacao(void) {
   limpar(ARQ_RES);
 }
 
+/* "A-03", "A03", "a 03" e "A.03" contam como a mesma sala. */
+static void test_nome_de_sala_parecido(void) {
+  Aplicacao app;
+  Sala a03 = sala(0, "A-03");
+  Sala a04 = sala(0, "A-04");
+
+  limpar(ARQ_SAL);
+  limpar(ARQ_RES);
+  memset(&app, 0, sizeof app);
+  if (!aplicacao_iniciar(&app, ARQ_SAL, ARQ_RES)) {
+    CHECK(0);
+    return;
+  }
+  CHECK(aplicacao_salvar_sala(&app, &a03));
+  CHECK(aplicacao_salvar_sala(&app, &a04));
+
+  /* escritas diferentes da mesma sala sao recusadas */
+  Sala repetida = sala(0, "A03");
+  CHECK(!aplicacao_salvar_sala(&app, &repetida));
+  repetida = sala(0, "a 03");
+  CHECK(!aplicacao_salvar_sala(&app, &repetida));
+  repetida = sala(0, "A.03");
+  CHECK(!aplicacao_salvar_sala(&app, &repetida));
+  CHECK(app.quantidadeSalas == 2);
+
+  /* a busca encontra a sala original */
+  Sala *achada = aplicacao_buscar_sala_por_nome(&app, "a03", 0);
+  CHECK(achada != NULL && strcmp(achada->nome, "A-03") == 0);
+  CHECK(aplicacao_buscar_sala_por_nome(&app, "A-05", 0) == NULL);
+
+  /* editar: nao pode virar o nome de outra sala, mas pode manter o proprio */
+  Sala editada = a04;
+  strcpy(editada.nome, "a03");
+  CHECK(!aplicacao_editar_sala(&app, a04.id, editada));
+  strcpy(editada.nome, "A04");
+  editada.capacidade = 50;
+  CHECK(aplicacao_editar_sala(&app, a04.id, editada));
+  CHECK(aplicacao_buscar_sala(&app, a04.id)->capacidade == 50);
+
+  aplicacao_finalizar(&app);
+  limpar(ARQ_SAL);
+  limpar(ARQ_RES);
+}
+
 static void test_crlf_e_bom(void) {
   Sala *s = NULL;
   size_t n = 0;
@@ -736,6 +780,7 @@ int main(void) {
   RODAR(test_linhas_invalidas_reservas);
   RODAR(test_recorrencia_v3);
   RODAR(test_servico_aplicacao);
+  RODAR(test_nome_de_sala_parecido);
   RODAR(test_crlf_e_bom);
   RODAR(test_salvar_dado_invalido_nao_altera_arquivo);
   RODAR(test_gravacao_segura_backup);

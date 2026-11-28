@@ -36,6 +36,10 @@ int aplicacao_buscar_conflito_reserva(const Aplicacao *app,
                                       Reserva *conflitante);
 
 Sala *aplicacao_buscar_sala(Aplicacao *app, int id);
+// Procura uma sala pelo nome, sem diferenciar maiusculas, hifen, ponto e
+// espaco ("A-03" = "A03"). ignorarId pula a propria sala ao editar (0 = nenhuma).
+Sala *aplicacao_buscar_sala_por_nome(Aplicacao *app, const char *nome,
+                                     int ignorarId);
 Reserva *aplicacao_buscar_reserva(Aplicacao *app, int id);
 
 Aplicacao *aplicacao_padrao(void);
