@@ -768,6 +768,52 @@ static void test_migrar_txt_para_csv(void) {
     t();                                                                       \
   } while (0)
 
+/* Sala com reservas nao pode ser excluida; reserva excluida some do arquivo. */
+static void test_excluir(void) {
+  Aplicacao app;
+  Sala i03 = sala(0, "I-03");
+  Sala i04 = sala(0, "I-04");
+
+  limpar(ARQ_SAL);
+  limpar(ARQ_RES);
+  memset(&app, 0, sizeof app);
+  if (!aplicacao_iniciar(&app, ARQ_SAL, ARQ_RES)) {
+    CHECK(0);
+    return;
+  }
+  CHECK(aplicacao_salvar_sala(&app, &i03));
+  CHECK(aplicacao_salvar_sala(&app, &i04));
+  Reserva r = aula(0, i03.id, SEG, H(8, 0), H(10, 0));
+  CHECK(aplicacao_salvar_reserva(&app, r));
+  int idReserva = app.reservas[0].id;
+
+  CHECK(aplicacao_contar_reservas_da_sala(&app, i03.id) == 1);
+  CHECK(aplicacao_contar_reservas_da_sala(&app, i04.id) == 0);
+
+  /* I-03 tem reserva: recusa e nao mexe em nada */
+  CHECK(!aplicacao_excluir_sala(&app, i03.id));
+  CHECK(app.quantidadeSalas == 2);
+
+  /* I-04 esta livre: pode excluir */
+  CHECK(aplicacao_excluir_sala(&app, i04.id));
+  CHECK(app.quantidadeSalas == 1 && aplicacao_buscar_sala(&app, i04.id) == NULL);
+
+  /* excluindo a reserva, a I-03 fica livre para excluir */
+  CHECK(aplicacao_excluir_reserva(&app, idReserva));
+  CHECK(app.quantidadeReservas == 0);
+  CHECK(aplicacao_excluir_sala(&app, i03.id));
+  CHECK(!aplicacao_excluir_sala(&app, i03.id)); /* ja nao existe */
+  aplicacao_finalizar(&app);
+
+  /* confere que ficou gravado no arquivo */
+  memset(&app, 0, sizeof app);
+  CHECK(aplicacao_iniciar(&app, ARQ_SAL, ARQ_RES));
+  CHECK(app.quantidadeSalas == 0 && app.quantidadeReservas == 0);
+  aplicacao_finalizar(&app);
+  limpar(ARQ_SAL);
+  limpar(ARQ_RES);
+}
+
 int main(void) {
   printf("Testes do modulo de persistencia\n");
   RODAR(test_salas_ida_e_volta);
@@ -781,6 +827,7 @@ int main(void) {
   RODAR(test_recorrencia_v3);
   RODAR(test_servico_aplicacao);
   RODAR(test_nome_de_sala_parecido);
+  RODAR(test_excluir);
   RODAR(test_crlf_e_bom);
   RODAR(test_salvar_dado_invalido_nao_altera_arquivo);
   RODAR(test_gravacao_segura_backup);

@@ -51,6 +51,7 @@ const char *CSS_VISUAL_ESCURO =
     "window button.secundario:hover, window button.btn-pdf:hover, window "
     "button.btn-csv:hover, window menubutton > button:hover { background: "
     "#1e293b; }"
+    "window button.excluir label { color: #fca5a5; }"
     "window entry, window spinbutton, window passwordentry, window dropdown > "
     "button, window .seletor-data { background: #0f172a; color: #f8fafc; "
     "border-color: rgba(148, 163, 184, 0.24); }"

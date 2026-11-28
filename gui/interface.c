@@ -38,6 +38,66 @@ void interface_mensagem(Estado *e, const char *texto, gboolean erro) {
       g_timeout_add_seconds(3, limpar_mensagem_status, e->barra_status);
 }
 
+/* Janela "tem certeza?" usada antes de excluir. */
+typedef struct {
+  void (*ao_confirmar)(gpointer);
+  gpointer dados;
+} Confirmacao;
+
+#if GTK_CHECK_VERSION(4, 10, 0)
+static void ao_responder_confirmacao(GObject *origem, GAsyncResult *res,
+                                     gpointer dados) {
+  Confirmacao *c = (Confirmacao *)dados;
+  GError *erro = NULL;
+  int escolha =
+      gtk_alert_dialog_choose_finish(GTK_ALERT_DIALOG(origem), res, &erro);
+  if (erro)
+    g_error_free(erro);
+  else if (escolha == 1)
+    c->ao_confirmar(c->dados);
+  g_free(c);
+}
+#else
+static void ao_responder_confirmacao(GtkDialog *dialog, int resposta,
+                                     gpointer dados) {
+  Confirmacao *c = (Confirmacao *)dados;
+  gtk_window_destroy(GTK_WINDOW(dialog));
+  if (resposta == GTK_RESPONSE_ACCEPT)
+    c->ao_confirmar(c->dados);
+  g_free(c);
+}
+#endif
+
+void interface_confirmar(Estado *e, const char *titulo, const char *detalhe,
+                         const char *botao, void (*ao_confirmar)(gpointer),
+                         gpointer dados) {
+  Confirmacao *c = g_new(Confirmacao, 1);
+  c->ao_confirmar = ao_confirmar;
+  c->dados = dados;
+  GtkWindow *janela = e && e->janela ? GTK_WINDOW(e->janela) : NULL;
+
+#if GTK_CHECK_VERSION(4, 10, 0)
+  const char *botoes[] = {"Cancelar", botao, NULL};
+  GtkAlertDialog *alerta = gtk_alert_dialog_new("%s", titulo);
+  gtk_alert_dialog_set_detail(alerta, detalhe);
+  gtk_alert_dialog_set_buttons(alerta, botoes);
+  gtk_alert_dialog_set_cancel_button(alerta, 0);
+  gtk_alert_dialog_set_default_button(alerta, 0);
+  gtk_alert_dialog_choose(alerta, janela, NULL, ao_responder_confirmacao, c);
+  g_object_unref(alerta);
+#else
+  GtkWidget *dialog = gtk_message_dialog_new(
+      janela, GTK_DIALOG_MODAL | GTK_DIALOG_DESTROY_WITH_PARENT,
+      GTK_MESSAGE_WARNING, GTK_BUTTONS_NONE, "%s", titulo);
+  gtk_message_dialog_format_secondary_text(GTK_MESSAGE_DIALOG(dialog), "%s",
+                                           detalhe);
+  gtk_dialog_add_button(GTK_DIALOG(dialog), "Cancelar", GTK_RESPONSE_CANCEL);
+  gtk_dialog_add_button(GTK_DIALOG(dialog), botao, GTK_RESPONSE_ACCEPT);
+  g_signal_connect(dialog, "response", G_CALLBACK(ao_responder_confirmacao), c);
+  gtk_widget_show(dialog);
+#endif
+}
+
 static void ao_menu(GtkToggleButton *b, gpointer dados) {
   Estado *e = (Estado *)dados;
   if (gtk_toggle_button_get_active(b)) {

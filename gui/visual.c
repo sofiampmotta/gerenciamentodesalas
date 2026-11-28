@@ -153,6 +153,8 @@ static const char *CSS_PALETA_CLARA =
     "window button.secundario:hover, window button.btn-pdf:hover, window "
     "button.btn-csv:hover, window menubutton > button:hover { background: "
     "#f3f4f6; }"
+    "window button.excluir label { color: #9f1d24; }"
+    "window button.excluir:hover { background: #fef2f2; }"
     "window entry, window spinbutton, window passwordentry, window dropdown > "
     "button, window .seletor-data { background: #ffffff; color: #111827; "
     "border-color: #d1d5db; }"

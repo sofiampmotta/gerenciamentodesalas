@@ -299,11 +299,24 @@ int aplicacao_editar_sala(Aplicacao *app, int id, Sala dadosNovos) {
   return 1;
 }
 
+size_t aplicacao_contar_reservas_da_sala(const Aplicacao *app, int idSala) {
+  size_t total = 0;
+  if (app == NULL)
+    return 0;
+  for (size_t i = 0; i < app->quantidadeReservas; i++)
+    if (app->reservas[i].idSala == idSala)
+      total++;
+  return total;
+}
+
 int aplicacao_excluir_sala(Aplicacao *app, int id) {
   if (app == NULL)
     return 0;
   Sala *sala = aplicacao_buscar_sala(app, id);
   if (sala == NULL)
+    return 0;
+  // nao apaga sala que ainda tem reservas, senao elas ficam sem sala
+  if (aplicacao_contar_reservas_da_sala(app, id) > 0)
     return 0;
 
   size_t indice = (size_t)(sala - app->salas);

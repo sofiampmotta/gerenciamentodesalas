@@ -56,5 +56,8 @@ void dados_verificar_reserva(const ReservaVista *r, VerificacaoReserva *v);
 int  dados_salvar_reserva(const ReservaVista *r, char *msg, size_t tam);
 int  dados_indice_reserva(int id);
 int  dados_atualizar_reserva(const ReservaVista *r, char *msg, size_t tam);
+/* Retornam 0 se excluiu e -1 se não (o motivo fica em msg). */
+int  dados_excluir_reserva(int id, char *msg, size_t tam);
+int  dados_excluir_sala(int id, char *msg, size_t tam);
 void dados_recarregar(void);
 #endif

@@ -16,6 +16,10 @@ typedef struct {
 int  interface_iniciar(int argc, char **argv);
 void interface_mensagem(Estado *e, const char *texto, gboolean erro);
 void interface_ir_para(Estado *e, const char *tela);
+/* Pergunta "tem certeza?"; ao_confirmar só roda se a pessoa clicar em botao. */
+void interface_confirmar(Estado *e, const char *titulo, const char *detalhe,
+                         const char *botao, void (*ao_confirmar)(gpointer),
+                         gpointer dados);
 void estilo_aplicar(void);
 void login_sair(GtkButton *b, gpointer dados);
 

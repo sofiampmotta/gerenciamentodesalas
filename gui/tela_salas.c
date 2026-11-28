@@ -16,6 +16,7 @@ typedef struct {
   GtkWidget *chk_acessivel;
   GtkWidget *chk_televisao;
   GtkWidget *spin_computadores;
+  GtkWidget *b_excluir;
 } TelaSalas;
 
 static void aplicar_estilo(void) {
@@ -111,6 +112,7 @@ static void mostrar_sala(TelaSalas *t, int i) {
   gtk_check_button_set_active(GTK_CHECK_BUTTON(t->chk_televisao), s->televisao);
   gtk_spin_button_set_value(GTK_SPIN_BUTTON(t->spin_computadores),
                             s->computadores);
+  gtk_widget_set_visible(t->b_excluir, TRUE);
 }
 
 static void formulario_novo(TelaSalas *t) {
@@ -122,6 +124,7 @@ static void formulario_novo(TelaSalas *t) {
   gtk_check_button_set_active(GTK_CHECK_BUTTON(t->chk_acessivel), FALSE);
   gtk_check_button_set_active(GTK_CHECK_BUTTON(t->chk_televisao), FALSE);
   gtk_spin_button_set_value(GTK_SPIN_BUTTON(t->spin_computadores), 0);
+  gtk_widget_set_visible(t->b_excluir, FALSE); // sala nova: nada a excluir
 }
 
 static void ao_selecionar(GtkListBox *lista, GtkListBoxRow *row,
@@ -261,6 +264,44 @@ static void ao_salvar(GtkButton *b, gpointer dados) {
   g_free(local);
 }
 
+static void excluir_sala_confirmada(gpointer dados) {
+  TelaSalas *t = (TelaSalas *)dados;
+  char msg[160];
+  if (t->selecionado < 0)
+    return;
+  if (dados_excluir_sala(g_salas[t->selecionado].id, msg, sizeof msg) < 0) {
+    interface_mensagem(t->e, msg, TRUE);
+    return;
+  }
+  t->selecionado = -1;
+  preencher_lista(t);
+  formulario_novo(t);
+  interface_mensagem(t->e, msg, FALSE);
+}
+
+static void ao_excluir(GtkButton *b, gpointer dados) {
+  TelaSalas *t = (TelaSalas *)dados;
+  if (t->selecionado < 0)
+    return;
+  SalaVista *s = &g_salas[t->selecionado];
+
+  // avisa logo, sem abrir a janela de confirmacao
+  size_t reservas = aplicacao_contar_reservas_da_sala(aplicacao_padrao(), s->id);
+  if (reservas > 0) {
+    char *msg = g_strdup_printf("A sala %s tem %lu reserva(s). Exclua ou mude "
+                                "essas reservas de sala antes.",
+                                s->nome, (unsigned long)reservas);
+    interface_mensagem(t->e, msg, TRUE);
+    g_free(msg);
+    return;
+  }
+
+  char *titulo = g_strdup_printf("Excluir a sala %s?", s->nome);
+  interface_confirmar(t->e, titulo, "Essa ação não pode ser desfeita.",
+                      "Excluir", excluir_sala_confirmada, t);
+  g_free(titulo);
+}
+
 static GtkWidget *rotulo_campo(const char *texto) {
   GtkWidget *l = gtk_label_new(texto);
   gtk_widget_add_css_class(l, "subtitulo");
@@ -365,8 +406,15 @@ GtkWidget *tela_salas_criar(Estado *e) {
   GtkWidget *b_desc = gtk_button_new_with_label("Descartar");
   gtk_widget_add_css_class(b_desc, "secundario");
   g_signal_connect(b_desc, "clicked", G_CALLBACK(ao_descartar), t);
+  t->b_excluir = gtk_button_new_with_label("Excluir sala");
+  gtk_widget_add_css_class(t->b_excluir, "secundario");
+  gtk_widget_add_css_class(t->b_excluir, "excluir");
+  gtk_widget_set_hexpand(t->b_excluir, TRUE);
+  gtk_widget_set_halign(t->b_excluir, GTK_ALIGN_END); // longe do Salvar
+  g_signal_connect(t->b_excluir, "clicked", G_CALLBACK(ao_excluir), t);
   gtk_box_append(GTK_BOX(botoes), b_salvar);
   gtk_box_append(GTK_BOX(botoes), b_desc);
+  gtk_box_append(GTK_BOX(botoes), t->b_excluir);
   gtk_box_append(GTK_BOX(form), botoes);
   gtk_box_append(GTK_BOX(pagina), form);
 

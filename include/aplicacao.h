@@ -21,7 +21,9 @@ void aplicacao_finalizar(Aplicacao *app);
 /* Aceita id 0 para sala nova e preenche o id gerado em caso de sucesso. */
 int aplicacao_salvar_sala(Aplicacao *app, Sala *sala);
 int aplicacao_editar_sala(Aplicacao *app, int id, Sala dadosNovos);
+/* Recusa (retorna 0) se a sala ainda tiver reservas. */
 int aplicacao_excluir_sala(Aplicacao *app, int id);
+size_t aplicacao_contar_reservas_da_sala(const Aplicacao *app, int idSala);
 
 int aplicacao_salvar_reserva(Aplicacao *app, Reserva reserva);
 /* A persistencia é aplicada atomicamente, e os ids são atribidos posteriormente em caso de sucesso */

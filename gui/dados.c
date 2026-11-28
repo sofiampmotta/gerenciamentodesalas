@@ -362,6 +362,51 @@ int dados_indice_reserva(int id) {
   return -1;
 }
 
+int dados_excluir_reserva(int id, char *msg, size_t tam) {
+  int i = dados_indice_reserva(id);
+  if (i < 0) {
+    g_strlcpy(msg, "Reserva não encontrada.", tam);
+    return -1;
+  }
+  char atividade[96];
+  g_strlcpy(atividade, g_reservas[i].atividade, sizeof atividade);
+
+  if (!aplicacao_excluir_reserva(aplicacao_padrao(), id)) {
+    g_strlcpy(msg, "Não foi possível excluir a reserva.", tam);
+    return -1;
+  }
+  dados_recarregar();
+  g_snprintf(msg, tam, "Reserva excluída: %s.", atividade);
+  return 0;
+}
+
+int dados_excluir_sala(int id, char *msg, size_t tam) {
+  Aplicacao *app = aplicacao_padrao();
+  Sala *sala = aplicacao_buscar_sala(app, id);
+  if (sala == NULL) {
+    g_strlcpy(msg, "Sala não encontrada.", tam);
+    return -1;
+  }
+  char nome[64];
+  g_strlcpy(nome, sala->nome, sizeof nome);
+
+  size_t reservas = aplicacao_contar_reservas_da_sala(app, id);
+  if (reservas > 0) {
+    g_snprintf(msg, tam,
+               "A sala %s tem %lu reserva(s). Exclua ou mude essas reservas "
+               "de sala antes.",
+               nome, (unsigned long)reservas);
+    return -1;
+  }
+  if (!aplicacao_excluir_sala(app, id)) {
+    g_strlcpy(msg, "Não foi possível excluir a sala.", tam);
+    return -1;
+  }
+  dados_recarregar();
+  g_snprintf(msg, tam, "Sala %s excluída.", nome);
+  return 0;
+}
+
 int dados_atualizar_reserva(const ReservaVista *r, char *msg, size_t tam) {
   int i = dados_indice_reserva(r->idReserva);
   if (i < 0) {
