@@ -11,12 +11,20 @@ typedef struct {
     size_t quantidadeReservas;
     char caminhoSalas[512];
     char caminhoReservas[512];
+    char caminhoHistorico[512];
+    char caminhoPerfil[512];
+    char usuario[64]; /* quem esta usando, vai para o historico */
+    char setor[32];
 } Aplicacao;
 
 int aplicacao_iniciar(Aplicacao *app,
                       const char *caminhoSalas,
                       const char *caminhoReservas);
 void aplicacao_finalizar(Aplicacao *app);
+
+/* Troca quem esta usando o sistema e grava em perfil.txt. */
+int aplicacao_definir_usuario(Aplicacao *app, const char *nome,
+                              const char *setor);
 
 /* Aceita id 0 para sala nova e preenche o id gerado em caso de sucesso. */
 int aplicacao_salvar_sala(Aplicacao *app, Sala *sala);

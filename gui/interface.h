@@ -10,7 +10,7 @@ typedef struct {
     GtkWidget *barra_status;
     GtkWidget *rotulo_nome;
     GtkWidget *rotulo_setor;
-    GtkWidget *botoes_menu[5];
+    GtkWidget *botoes_menu[6];
 } Estado;
 
 int  interface_iniciar(int argc, char **argv);
@@ -29,6 +29,7 @@ GtkWidget *tela_busca_criar(Estado *e);
 GtkWidget *tela_reservas_criar(Estado *e);
 GtkWidget *tela_nova_reserva_criar(Estado *e);
 GtkWidget *tela_salas_criar(Estado *e);
+GtkWidget *tela_historico_criar(Estado *e);
 void nova_reserva_preencher(const char *sala, int dia, int ini, int fim);
 GtkWidget *tema_criar_chave(void);
 GtkWidget *seletor_data_criar(int data, void (*ao_mudar)(gpointer), gpointer dados);

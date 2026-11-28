@@ -36,17 +36,17 @@ TEST_EXPORT_BIN = build/test_exportacao
 TEST_LEITOR_BIN = build/test_leitor_pdf
 TEST_AGENDA_BIN = build/test_agenda
 
-$(TEST_BIN): src/persistencia.c src/alocacao.c src/aplicacao.c tests/test_persistencia.c include/persistencia.h include/salas.h include/alocacao.h include/aplicacao.h
+$(TEST_BIN): src/persistencia.c src/alocacao.c src/aplicacao.c src/historico.c tests/test_persistencia.c include/persistencia.h include/salas.h include/alocacao.h include/aplicacao.h
 	@mkdir -p build
-	$(CC) -std=c99 -Wall -Wextra -Iinclude src/persistencia.c src/alocacao.c src/aplicacao.c tests/test_persistencia.c -o $@
+	$(CC) -std=c99 -Wall -Wextra -Iinclude src/persistencia.c src/alocacao.c src/aplicacao.c src/historico.c tests/test_persistencia.c -o $@
 
 $(TEST_EXPORT_BIN): src/exportacao.c tests/test_exportacao.c include/exportacao.h
 	@mkdir -p build
 	$(CC) -std=c99 -Wall -Wextra -Iinclude $(shell pkg-config --cflags gtk4) src/exportacao.c tests/test_exportacao.c -o $@ $(shell pkg-config --libs gtk4)
 
-$(TEST_LEITOR_BIN): src/leitor_pdf.c src/persistencia.c src/alocacao.c src/aplicacao.c tests/test_leitor_pdf.c include/leitor_pdf.h include/persistencia.h include/aplicacao.h
+$(TEST_LEITOR_BIN): src/leitor_pdf.c src/persistencia.c src/alocacao.c src/aplicacao.c src/historico.c tests/test_leitor_pdf.c include/leitor_pdf.h include/persistencia.h include/aplicacao.h
 	@mkdir -p build
-	$(CC) -std=c99 -Wall -Wextra -Iinclude src/leitor_pdf.c src/persistencia.c src/alocacao.c src/aplicacao.c tests/test_leitor_pdf.c -o $@
+	$(CC) -std=c99 -Wall -Wextra -Iinclude src/leitor_pdf.c src/persistencia.c src/alocacao.c src/aplicacao.c src/historico.c tests/test_leitor_pdf.c -o $@
 
 $(TEST_AGENDA_BIN): src/agenda.c tests/test_agenda.c include/agenda.h include/salas.h
 	@mkdir -p build

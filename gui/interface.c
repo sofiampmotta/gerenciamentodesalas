@@ -1,12 +1,14 @@
+#include "../include/aplicacao.h"
 #include "interface.h"
 #ifdef _WIN32
 #include <gdk/win32/gdkwin32.h>
 #include <windows.h>
 #endif
 
-static const char *NOMES[5] = {"inicio", "visao", "busca", "reservas", "salas"};
-static const char *TITULOS[5] = {"Início", "Visão geral", "Buscar salas",
-                                 "Reservas", "Salas"};
+static const char *NOMES[6] = {"inicio",   "visao", "busca",
+                               "reservas", "salas", "historico"};
+static const char *TITULOS[6] = {"Início",   "Visão geral", "Buscar salas",
+                                 "Reservas", "Salas",       "Histórico"};
 
 static guint g_timer_status = 0;
 
@@ -98,6 +100,110 @@ void interface_confirmar(Estado *e, const char *titulo, const char *detalhe,
 #endif
 }
 
+/* ---- Caixinha "Quem está usando?" ---- */
+typedef struct {
+  Estado *e;
+  GtkWidget *popover, *nome, *setor;
+} Perfil;
+
+static void ao_abrir_perfil(GtkWidget *w, gpointer dados) {
+  (void)w;
+  Perfil *p = (Perfil *)dados;
+  Aplicacao *app = aplicacao_padrao();
+  if (app == NULL)
+    return;
+  gtk_editable_set_text(GTK_EDITABLE(p->nome), app->usuario);
+  gtk_editable_set_text(GTK_EDITABLE(p->setor), app->setor);
+}
+
+static void ao_salvar_perfil(GtkWidget *w, gpointer dados) {
+  (void)w;
+  Perfil *p = (Perfil *)dados;
+  char nome[64], setor[32];
+  g_strlcpy(nome, gtk_editable_get_text(GTK_EDITABLE(p->nome)), sizeof nome);
+  g_strlcpy(setor, gtk_editable_get_text(GTK_EDITABLE(p->setor)), sizeof setor);
+  g_strstrip(nome);
+  g_strstrip(setor);
+
+  if (nome[0] == '\0') {
+    interface_mensagem(p->e, "Digite o nome de quem está usando.", TRUE);
+    return;
+  }
+  if (!aplicacao_definir_usuario(aplicacao_padrao(), nome, setor)) {
+    interface_mensagem(p->e, "Não foi possível salvar o nome.", TRUE);
+    return;
+  }
+  gtk_label_set_text(GTK_LABEL(p->e->rotulo_nome), nome);
+  gtk_label_set_text(GTK_LABEL(p->e->rotulo_setor), setor);
+  gtk_popover_popdown(GTK_POPOVER(p->popover));
+
+  char *msg = g_strdup_printf("As alterações agora ficam registradas como %s.",
+                              nome);
+  interface_mensagem(p->e, msg, FALSE);
+  g_free(msg);
+}
+
+static void ao_cancelar_perfil(GtkButton *b, gpointer dados) {
+  (void)b;
+  gtk_popover_popdown(GTK_POPOVER(((Perfil *)dados)->popover));
+}
+
+static GtkWidget *campo_perfil(GtkWidget *caixa, const char *rotulo,
+                               int max) {
+  GtkWidget *l = gtk_label_new(rotulo);
+  gtk_label_set_xalign(GTK_LABEL(l), 0);
+  gtk_widget_add_css_class(l, "subtitulo");
+  GtkWidget *campo = gtk_entry_new();
+  gtk_entry_set_max_length(GTK_ENTRY(campo), max);
+  gtk_box_append(GTK_BOX(caixa), l);
+  gtk_box_append(GTK_BOX(caixa), campo);
+  return campo;
+}
+
+static GtkWidget *criar_perfil(Estado *e) {
+  Perfil *p = g_new0(Perfil, 1);
+  p->e = e;
+
+  GtkWidget *caixa = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
+  gtk_widget_set_margin_top(caixa, 10);
+  gtk_widget_set_margin_bottom(caixa, 10);
+  gtk_widget_set_margin_start(caixa, 10);
+  gtk_widget_set_margin_end(caixa, 10);
+  gtk_widget_set_size_request(caixa, 280, -1);
+
+  GtkWidget *titulo = gtk_label_new("Quem está usando?");
+  gtk_widget_add_css_class(titulo, "negrito");
+  gtk_label_set_xalign(GTK_LABEL(titulo), 0);
+  GtkWidget *dica = gtk_label_new("Esse nome aparece no histórico de alterações.");
+  gtk_widget_add_css_class(dica, "subtitulo");
+  gtk_label_set_xalign(GTK_LABEL(dica), 0);
+  gtk_label_set_wrap(GTK_LABEL(dica), TRUE);
+  gtk_box_append(GTK_BOX(caixa), titulo);
+  gtk_box_append(GTK_BOX(caixa), dica);
+
+  p->nome = campo_perfil(caixa, "Nome", 60);
+  p->setor = campo_perfil(caixa, "Setor", 30);
+  g_signal_connect(p->nome, "activate", G_CALLBACK(ao_salvar_perfil), p);
+  g_signal_connect(p->setor, "activate", G_CALLBACK(ao_salvar_perfil), p);
+
+  GtkWidget *botoes = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+  gtk_widget_set_margin_top(botoes, 8);
+  GtkWidget *b_salvar = gtk_button_new_with_label("Salvar");
+  gtk_widget_add_css_class(b_salvar, "primario");
+  g_signal_connect(b_salvar, "clicked", G_CALLBACK(ao_salvar_perfil), p);
+  GtkWidget *b_cancelar = gtk_button_new_with_label("Cancelar");
+  gtk_widget_add_css_class(b_cancelar, "secundario");
+  g_signal_connect(b_cancelar, "clicked", G_CALLBACK(ao_cancelar_perfil), p);
+  gtk_box_append(GTK_BOX(botoes), b_salvar);
+  gtk_box_append(GTK_BOX(botoes), b_cancelar);
+  gtk_box_append(GTK_BOX(caixa), botoes);
+
+  p->popover = gtk_popover_new();
+  gtk_popover_set_child(GTK_POPOVER(p->popover), caixa);
+  g_signal_connect(p->popover, "show", G_CALLBACK(ao_abrir_perfil), p);
+  return p->popover;
+}
+
 static void ao_menu(GtkToggleButton *b, gpointer dados) {
   Estado *e = (Estado *)dados;
   if (gtk_toggle_button_get_active(b)) {
@@ -129,7 +235,7 @@ static GtkWidget *criar_menu(Estado *e) {
   gtk_box_append(GTK_BOX(menu), tag_sistema);
 
   GtkWidget *primeiro = NULL;
-  for (int i = 0; i < 5; i++) {
+  for (int i = 0; i < 6; i++) {
     GtkWidget *b = gtk_toggle_button_new_with_label(TITULOS[i]);
     gtk_widget_add_css_class(b, "menu");
     gtk_widget_set_hexpand(b, TRUE);
@@ -156,26 +262,34 @@ static GtkWidget *criar_menu(Estado *e) {
   GtkWidget *chave_tema = tema_criar_chave();
   gtk_box_append(GTK_BOX(rodape), chave_tema);
 
+  // quem esta usando; clicando, abre a caixinha para trocar o nome
+  Aplicacao *app = aplicacao_padrao();
   GtkWidget *caixa_usuario = gtk_box_new(GTK_ORIENTATION_VERTICAL, 2);
-  gtk_widget_set_margin_start(caixa_usuario, 14);
-  gtk_widget_set_margin_end(caixa_usuario, 14);
 
-  e->rotulo_nome = gtk_label_new("Leidjane");
+  e->rotulo_nome = gtk_label_new(app ? app->usuario : "Leidjane");
   gtk_widget_add_css_class(e->rotulo_nome, "usuario-nome");
   gtk_label_set_xalign(GTK_LABEL(e->rotulo_nome), 0);
 
-  e->rotulo_setor = gtk_label_new("DATP");
+  e->rotulo_setor = gtk_label_new(app ? app->setor : "DATP");
   gtk_widget_add_css_class(e->rotulo_setor, "usuario-info");
   gtk_label_set_xalign(GTK_LABEL(e->rotulo_setor), 0);
 
-  GtkWidget *u3 = gtk_label_new("Sistema local");
+  GtkWidget *u3 = gtk_label_new("Clique para trocar");
   gtk_widget_add_css_class(u3, "usuario-info");
   gtk_label_set_xalign(GTK_LABEL(u3), 0);
 
   gtk_box_append(GTK_BOX(caixa_usuario), e->rotulo_nome);
   gtk_box_append(GTK_BOX(caixa_usuario), e->rotulo_setor);
   gtk_box_append(GTK_BOX(caixa_usuario), u3);
-  gtk_box_append(GTK_BOX(rodape), caixa_usuario);
+
+  GtkWidget *b_perfil = gtk_menu_button_new();
+  gtk_widget_add_css_class(b_perfil, "perfil");
+  gtk_widget_set_margin_start(b_perfil, 8);
+  gtk_widget_set_margin_end(b_perfil, 8);
+  gtk_menu_button_set_child(GTK_MENU_BUTTON(b_perfil), caixa_usuario);
+  gtk_menu_button_set_direction(GTK_MENU_BUTTON(b_perfil), GTK_ARROW_RIGHT);
+  gtk_menu_button_set_popover(GTK_MENU_BUTTON(b_perfil), criar_perfil(e));
+  gtk_box_append(GTK_BOX(rodape), b_perfil);
 
   gtk_box_append(GTK_BOX(menu), rodape);
 
@@ -268,6 +382,7 @@ static void ativar(GtkApplication *app, gpointer dados) {
   gtk_stack_add_named(GTK_STACK(e->stack), tela_reservas_criar(e), "reservas");
   gtk_stack_add_named(GTK_STACK(e->stack), tela_salas_criar(e), "salas");
   gtk_stack_add_named(GTK_STACK(e->stack), tela_nova_reserva_criar(e), "nova");
+  gtk_stack_add_named(GTK_STACK(e->stack), tela_historico_criar(e), "historico");
 
   e->barra_status = gtk_label_new("");
   gtk_widget_add_css_class(e->barra_status, "barra-status");

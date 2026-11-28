@@ -5,6 +5,7 @@
 
 #include "alocacao.h"
 #include "aplicacao.h"
+#include "historico.h"
 #include "persistencia.h"
 
 #include <stdio.h>
@@ -814,6 +815,76 @@ static void test_excluir(void) {
   limpar(ARQ_RES);
 }
 
+/* Cada alteracao vira uma linha em historico.csv, com o nome do perfil. */
+static void test_historico(void) {
+  Aplicacao app;
+  RegistroHistorico *h = NULL;
+  size_t n = 0;
+
+  limpar(ARQ_SAL);
+  limpar(ARQ_RES);
+  remove("historico.csv");
+  remove("perfil.txt");
+
+  memset(&app, 0, sizeof app);
+  if (!aplicacao_iniciar(&app, ARQ_SAL, ARQ_RES)) {
+    CHECK(0);
+    return;
+  }
+  CHECK(strcmp(app.usuario, "Leidjane") == 0); /* sem perfil.txt */
+  CHECK(aplicacao_definir_usuario(&app, "Heloísa", "DATP"));
+
+  Sala i03 = sala(0, "I-03"), i04 = sala(0, "I-04");
+  CHECK(aplicacao_salvar_sala(&app, &i03));
+  CHECK(aplicacao_salvar_sala(&app, &i04));
+  Sala maior = i03;
+  maior.capacidade = 50;
+  CHECK(aplicacao_editar_sala(&app, i03.id, maior));
+
+  Reserva r = aula(0, i03.id, SEG, H(7, 30), H(9, 10));
+  CHECK(aplicacao_salvar_reserva(&app, r));
+  int id = app.reservas[0].id;
+  Reserva mudada = app.reservas[0];
+  mudada.idSala = i04.id;
+  CHECK(aplicacao_editar_reserva(&app, id, mudada));
+  CHECK(aplicacao_excluir_reserva(&app, id));
+  aplicacao_finalizar(&app);
+
+  CHECK(historico_carregar("historico.csv", &h, &n));
+  CHECK(n == 6);
+  if (n == 6) {
+    CHECK(strcmp(h[0].acao, "Criou sala") == 0);
+    CHECK(strcmp(h[2].acao, "Editou sala") == 0);
+    CHECK(strcmp(h[2].detalhe, "I-03: lugares 40 → 50") == 0);
+    CHECK(strcmp(h[3].acao, "Criou reserva") == 0);
+    CHECK(strcmp(h[4].detalhe, "DEB CÁLCULO 1 (TC): sala I-03 → I-04") == 0);
+    CHECK(strcmp(h[5].acao, "Excluiu reserva") == 0);
+    CHECK(strcmp(h[5].quem, "Heloísa") == 0);
+    CHECK(strlen(h[5].data) == 10 && strlen(h[5].hora) == 5);
+  }
+  historico_liberar(h);
+
+  /* o nome continua salvo quando o sistema abre de novo */
+  memset(&app, 0, sizeof app);
+  CHECK(aplicacao_iniciar(&app, ARQ_SAL, ARQ_RES));
+  CHECK(strcmp(app.usuario, "Heloísa") == 0 && strcmp(app.setor, "DATP") == 0);
+  aplicacao_finalizar(&app);
+
+  /* ';' e quebra de linha nao estragam o arquivo */
+  CHECK(historico_registrar("historico.csv", "Ana", "Teste", "a;b\nc"));
+  CHECK(historico_carregar("historico.csv", &h, &n));
+  CHECK(n == 7 && strcmp(h[6].detalhe, "a,b c") == 0);
+  historico_liberar(h);
+
+  /* sem arquivo ainda: historico vazio, sem erro */
+  remove("historico.csv");
+  CHECK(historico_carregar("historico.csv", &h, &n) && n == 0 && h == NULL);
+
+  limpar(ARQ_SAL);
+  limpar(ARQ_RES);
+  remove("perfil.txt");
+}
+
 int main(void) {
   printf("Testes do modulo de persistencia\n");
   RODAR(test_salas_ida_e_volta);
@@ -828,6 +899,7 @@ int main(void) {
   RODAR(test_servico_aplicacao);
   RODAR(test_nome_de_sala_parecido);
   RODAR(test_excluir);
+  RODAR(test_historico);
   RODAR(test_crlf_e_bom);
   RODAR(test_salvar_dado_invalido_nao_altera_arquivo);
   RODAR(test_gravacao_segura_backup);

@@ -1,14 +1,15 @@
 #include "interface.h"
 #include <string.h>
 
-static const char *NOMES[5] = {"inicio", "visao", "busca", "reservas", "salas"};
+static const char *NOMES[6] = {"inicio",   "visao", "busca",
+                               "reservas", "salas", "historico"};
 
 void interface_ir_para(Estado *e, const char *tela) {
   if (!e || !e->stack || !tela)
     return;
 
   int idx = 3; /* telas fora do menu (ex.: "nova") destacam Reservas */
-  for (int i = 0; i < 5; i++) {
+  for (int i = 0; i < 6; i++) {
     if (strcmp(NOMES[i], tela) == 0) {
       idx = i;
       break;
