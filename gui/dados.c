@@ -55,6 +55,8 @@ void dados_iniciar(void) {
     destino->lugares = origem->capacidade;
     destino->projetor = origem->hasProjetor;
     destino->acessivel = origem->isAcessivel;
+    destino->televisao = origem->hasTelevisao;
+    destino->computadores = origem->computador;
   }
 
   static const char *const tipos[] = {"Aula", "Monitoria", "Extensão", "Evento",
@@ -85,7 +87,11 @@ void dados_iniciar(void) {
     destino->fim = origem->horario.fim;
   }
 }
+// Muda a cada alteracao; as telas comparam para saber se precisam redesenhar
+int g_versao_dados = 0;
+
 void dados_recarregar(void) {
+  g_versao_dados++;
   g_free(g_salas);
   g_free(g_reservas);
 
@@ -143,7 +149,62 @@ int dados_reserva_ocorre_em(const ReservaVista *r, int dia) {
   if (!reserva)
     return 0;
 
-  return reservaOcorreEm(*reserva, data_de_codigo(dia));
+  Data data = data_de_codigo(dia);
+  return reservaOcorreEm(*reserva, data) &&
+         !aplicacao_dia_cancelado(app, reserva->id, data);
+}
+
+int dados_dia_cancelado(int idReserva, int dia) {
+  return aplicacao_dia_cancelado(aplicacao_padrao(), idReserva,
+                                 data_de_codigo(dia));
+}
+
+int dados_cancelar_dia(int idReserva, int dia, const char *motivo, char *msg,
+                       size_t tam) {
+  char data[16];
+  dados_data_texto(dia, data, sizeof data);
+  if (!aplicacao_cancelar_dia(aplicacao_padrao(), idReserva,
+                              data_de_codigo(dia), motivo)) {
+    g_snprintf(msg, tam, "Não foi possível cancelar o dia %s.", data);
+    return -1;
+  }
+  g_versao_dados++;
+  g_snprintf(msg, tam, "Dia %s cancelado. A sala fica livre nesse horário.",
+             data);
+  return 0;
+}
+
+int dados_desfazer_cancelamento(int idReserva, int dia, char *msg, size_t tam) {
+  char data[16];
+  dados_data_texto(dia, data, sizeof data);
+  if (!aplicacao_desfazer_cancelamento(aplicacao_padrao(), idReserva,
+                                       data_de_codigo(dia))) {
+    g_snprintf(msg, tam,
+               "Não deu para desfazer: a sala já tem outra reserva em %s "
+               "nesse horário.",
+               data);
+    return -1;
+  }
+  g_versao_dados++;
+  g_snprintf(msg, tam, "A aula do dia %s voltou para a agenda.", data);
+  return 0;
+}
+
+int dados_cancelamentos(int idReserva, int dias[], const char *motivos[],
+                        int max) {
+  Aplicacao *app = aplicacao_padrao();
+  int n = 0;
+  if (app == NULL)
+    return 0;
+  for (size_t i = 0; i < app->quantidadeCancelamentos && n < max; i++) {
+    const Cancelamento *c = &app->cancelamentos[i];
+    if (c->idReserva != idReserva)
+      continue;
+    dias[n] = codigo_de_data(c->data);
+    motivos[n] = c->motivo;
+    n++;
+  }
+  return n;
 }
 
 static Atividade atividade_backend(const char *tipo) {
@@ -358,6 +419,51 @@ int dados_indice_reserva(int id) {
     if (g_reservas[i].idReserva == id)
       return i;
   return -1;
+}
+
+int dados_excluir_reserva(int id, char *msg, size_t tam) {
+  int i = dados_indice_reserva(id);
+  if (i < 0) {
+    g_strlcpy(msg, "Reserva não encontrada.", tam);
+    return -1;
+  }
+  char atividade[96];
+  g_strlcpy(atividade, g_reservas[i].atividade, sizeof atividade);
+
+  if (!aplicacao_excluir_reserva(aplicacao_padrao(), id)) {
+    g_strlcpy(msg, "Não foi possível excluir a reserva.", tam);
+    return -1;
+  }
+  dados_recarregar();
+  g_snprintf(msg, tam, "Reserva excluída: %s.", atividade);
+  return 0;
+}
+
+int dados_excluir_sala(int id, char *msg, size_t tam) {
+  Aplicacao *app = aplicacao_padrao();
+  Sala *sala = aplicacao_buscar_sala(app, id);
+  if (sala == NULL) {
+    g_strlcpy(msg, "Sala não encontrada.", tam);
+    return -1;
+  }
+  char nome[64];
+  g_strlcpy(nome, sala->nome, sizeof nome);
+
+  size_t reservas = aplicacao_contar_reservas_da_sala(app, id);
+  if (reservas > 0) {
+    g_snprintf(msg, tam,
+               "A sala %s tem %lu reserva(s). Exclua ou mude essas reservas "
+               "de sala antes.",
+               nome, (unsigned long)reservas);
+    return -1;
+  }
+  if (!aplicacao_excluir_sala(app, id)) {
+    g_strlcpy(msg, "Não foi possível excluir a sala.", tam);
+    return -1;
+  }
+  dados_recarregar();
+  g_snprintf(msg, tam, "Sala %s excluída.", nome);
+  return 0;
 }
 
 int dados_atualizar_reserva(const ReservaVista *r, char *msg, size_t tam) {

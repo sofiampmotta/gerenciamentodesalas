@@ -229,7 +229,10 @@ static void atualizar(TelaInicio *t) {
   for (int k = 0; k < nl; k++) {
     const SalaVista *sl = &g_salas[livres[k].sala];
     char lug[24], ate[40], h[8];
-    g_snprintf(lug, sizeof lug, "%d lugares", sl->lugares);
+    if (sl->lugares > 0)
+      g_snprintf(lug, sizeof lug, "%d lugares", sl->lugares);
+    else
+      g_strlcpy(lug, "— lugares", sizeof lug); // capacidade não informada
     if (livres[k].ate >= 24 * 60) {
       g_strlcpy(ate, "Livre o resto do dia", sizeof ate);
     } else {

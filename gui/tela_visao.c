@@ -1,3 +1,4 @@
+#include "../include/agenda.h"
 #include "../include/exportacao.h"
 #include "../include/leitor_pdf.h"
 #include "interface.h"
@@ -33,6 +34,7 @@ typedef struct {
   GtkWidget *btn_conf_toggle, *revealer_conf, *lista_conf;
   int ult_n_salas;
   int ult_n_reservas;
+  int ult_versao;
   int ult_dia;
   char ult_tipo[16];
   char ult_sala[64];
@@ -291,7 +293,10 @@ static void montar_ocupacao(TelaVisao *t, const Filtro *f) {
     gtk_widget_set_size_request(info, 150, -1);
     gtk_box_append(GTK_BOX(info), rotulo(sl->nome, 0, FALSE, TRUE));
     char lug[24];
-    g_snprintf(lug, sizeof lug, "%d lugares", sl->lugares);
+    if (sl->lugares > 0)
+      g_snprintf(lug, sizeof lug, "%d lugares", sl->lugares);
+    else
+      g_strlcpy(lug, "— lugares", sizeof lug); // capacidade não informada
     GtkWidget *l2 = rotulo(lug, 0, FALSE, FALSE);
     gtk_widget_add_css_class(l2, "subtitulo");
     gtk_box_append(GTK_BOX(info), l2);
@@ -444,6 +449,7 @@ static void registrar_filtro_renderizado(TelaVisao *t) {
   ler_filtro(t, &f);
   t->ult_n_salas = g_n_salas;
   t->ult_n_reservas = g_n_reservas;
+  t->ult_versao = g_versao_dados;
   t->ult_dia = f.dia;
   g_strlcpy(t->ult_tipo, f.tipo, sizeof t->ult_tipo);
   g_strlcpy(t->ult_sala, f.sala, sizeof t->ult_sala);
@@ -517,7 +523,8 @@ static void ao_mostrar(GtkWidget *w, gpointer dados) {
   Filtro f;
   ler_filtro(t, &f);
   if (t->renderizado && t->ult_n_salas == g_n_salas &&
-      t->ult_n_reservas == g_n_reservas && t->ult_dia == f.dia &&
+      t->ult_n_reservas == g_n_reservas && t->ult_versao == g_versao_dados &&
+      t->ult_dia == f.dia &&
       strcmp(t->ult_tipo, f.tipo) == 0 && strcmp(t->ult_sala, f.sala) == 0)
     return;
   recarregar_salas(t);
@@ -668,6 +675,91 @@ static void ao_csv(GtkButton *b, gpointer dados) {
   (void)b;
   exportar((TelaVisao *)dados, FALSE);
 }
+
+/* ---- exportar agenda (.ics) ----
+   Exporta o período inteiro (não só o dia exibido), respeitando os filtros
+   de tipo e de sala. Abre no Google Agenda, no Outlook e no celular. */
+static void ao_salvar_agenda(GtkNativeDialog *dialog, int resposta,
+                             gpointer dados) {
+  TelaVisao *t = dados;
+  if (resposta == GTK_RESPONSE_ACCEPT) {
+    GFile *arquivo = gtk_file_chooser_get_file(GTK_FILE_CHOOSER(dialog));
+    char *caminho = arquivo ? g_file_get_path(arquivo) : NULL;
+    Aplicacao *app = aplicacao_padrao();
+    if (!caminho || !app) {
+      interface_mensagem(t->e, "Não foi possível exportar a agenda.", TRUE);
+    } else {
+      char *destino = caminho_com_extensao(caminho, ".ics");
+      Filtro f;
+      filtro_renderizado(t, &f);
+
+      Reserva *lista = g_new0(Reserva, g_n_reservas > 0 ? g_n_reservas : 1);
+      size_t quantidade = 0;
+      for (int i = 0; i < g_n_reservas; i++) {
+        const ReservaVista *rv = &g_reservas[i];
+        if (f.tipo[0] && strcmp(rv->tipo, f.tipo) != 0)
+          continue;
+        if (f.sala[0] && strcmp(rv->sala, f.sala) != 0)
+          continue;
+        Reserva *r = aplicacao_buscar_reserva(app, rv->idReserva);
+        if (r)
+          lista[quantidade++] = *r;
+      }
+
+      if (exportarAgendaICS(destino, lista, quantidade, app->salas,
+                            app->quantidadeSalas, app->cancelamentos,
+                            app->quantidadeCancelamentos)) {
+        char *mensagem =
+            g_strdup_printf("Agenda exportada com %lu reservas: %s",
+                            (unsigned long)quantidade, destino);
+        interface_mensagem(t->e, mensagem, FALSE);
+        g_free(mensagem);
+      } else {
+        char *mensagem =
+            g_strdup_printf("Não foi possível exportar a agenda: %s", destino);
+        interface_mensagem(t->e, mensagem, TRUE);
+        g_free(mensagem);
+      }
+      g_free(lista);
+      g_free(destino);
+    }
+    g_free(caminho);
+    if (arquivo)
+      g_object_unref(arquivo);
+  }
+
+  gtk_native_dialog_destroy(GTK_NATIVE_DIALOG(dialog));
+  g_object_unref(dialog);
+}
+
+static void ao_agenda(GtkButton *b, gpointer dados) {
+  (void)b;
+  TelaVisao *t = dados;
+  Filtro f;
+  filtro_renderizado(t, &f);
+  acao_log("exportar_ics tipo:%s sala:%s", f.tipo[0] ? f.tipo : "(todas)",
+           f.sala[0] ? f.sala : "(todas)");
+  if (t->popover)
+    gtk_popover_popdown(GTK_POPOVER(t->popover));
+
+  char nome[96];
+  if (f.sala[0])
+    g_snprintf(nome, sizeof nome, "agenda-%s.ics", f.sala);
+  else
+    g_strlcpy(nome, "agenda-salas.ics", sizeof nome);
+
+  GtkFileChooserNative *seletor = gtk_file_chooser_native_new(
+      "Exportar agenda", (t->e && t->e->janela) ? GTK_WINDOW(t->e->janela) : NULL,
+      GTK_FILE_CHOOSER_ACTION_SAVE, "Salvar", "Cancelar");
+  gtk_file_chooser_set_current_name(GTK_FILE_CHOOSER(seletor), nome);
+  GtkFileFilter *filtro = gtk_file_filter_new();
+  gtk_file_filter_set_name(filtro, "Agenda (.ics)");
+  gtk_file_filter_add_pattern(filtro, "*.ics");
+  gtk_file_chooser_add_filter(GTK_FILE_CHOOSER(seletor), filtro);
+  g_object_unref(filtro);
+  g_signal_connect(seletor, "response", G_CALLBACK(ao_salvar_agenda), t);
+  gtk_native_dialog_show(GTK_NATIVE_DIALOG(seletor));
+}
 typedef struct {
   TelaVisao *t;
   char *caminho;
@@ -694,31 +786,50 @@ static void ao_confirmar_importacao(GtkDialog *dialog, int resposta,
 
     Aplicacao *app = aplicacao_padrao();
 
-    size_t importadas = 0;
-    size_t duplicadas = 0;
+    ResumoImportacao resumo;
 
-    int sucesso = importarPDF(app, imp->caminho, dataInicio, dataFim,
-                              &importadas, &duplicadas);
+    int resultado =
+        importarPDF(app, imp->caminho, dataInicio, dataFim, &resumo);
 
-    if (sucesso) {
+    if (resultado == LEITOR_OK) {
       dados_recarregar();
 
       imp->t->renderizado = FALSE;
       atualizar(imp->t);
       registrar_filtro_renderizado(imp->t);
 
-      char mensagem[200];
+      // Ex.: "780 reservas importadas. 14 com conflito e 2 com sala não
+      // cadastrada ficaram de fora."
+      GString *msg = g_string_new(NULL);
+      g_string_append_printf(msg, "%lu reservas importadas.",
+                             (unsigned long)resumo.importadas);
+      if (resumo.duplicadas > 0)
+        g_string_append_printf(msg, " %lu já existiam.",
+                               (unsigned long)resumo.duplicadas);
+      if (resumo.conflitos > 0 || resumo.semSala > 0) {
+        g_string_append(msg, " Ficaram de fora:");
+        if (resumo.conflitos > 0)
+          g_string_append_printf(msg, " %lu com conflito",
+                                 (unsigned long)resumo.conflitos);
+        if (resumo.conflitos > 0 && resumo.semSala > 0)
+          g_string_append(msg, " e");
+        if (resumo.semSala > 0)
+          g_string_append_printf(msg, " %lu com sala não cadastrada",
+                                 (unsigned long)resumo.semSala);
+        g_string_append(msg, ".");
+      }
 
-      g_snprintf(mensagem, sizeof mensagem,
-                 "%zu reservas importadas. "
-                 "%zu duplicadas ignoradas.",
-                 importadas, duplicadas);
-
-      interface_mensagem(imp->t->e, mensagem, FALSE);
+      interface_mensagem(imp->t->e, msg->str, FALSE);
+      g_string_free(msg, TRUE);
+    } else if (resultado == LEITOR_SEM_PDF) {
+      interface_mensagem(imp->t->e,
+                         "Não foi possível ler o PDF. Verifique se o "
+                         "pdftotext (Poppler) está instalado.",
+                         TRUE);
     } else {
       interface_mensagem(imp->t->e,
-                         "Falha na importação. Verifique o PDF, "
-                         "as salas e os conflitos.",
+                         "Falha na importação. O arquivo precisa ser o "
+                         "Relatório Turma/Horário da UPE.",
                          TRUE);
     }
   }
@@ -938,10 +1049,13 @@ GtkWidget *tela_visao_criar(Estado *e) {
   gtk_widget_set_margin_end(op, 6);
   GtkWidget *op_pdf = gtk_button_new_with_label("Exportar PDF");
   GtkWidget *op_csv = gtk_button_new_with_label("Exportar CSV");
+  GtkWidget *op_ics = gtk_button_new_with_label("Exportar agenda (.ics)");
   g_signal_connect(op_pdf, "clicked", G_CALLBACK(ao_pdf), t);
   g_signal_connect(op_csv, "clicked", G_CALLBACK(ao_csv), t);
+  g_signal_connect(op_ics, "clicked", G_CALLBACK(ao_agenda), t);
   gtk_box_append(GTK_BOX(op), op_pdf);
   gtk_box_append(GTK_BOX(op), op_csv);
+  gtk_box_append(GTK_BOX(op), op_ics);
   gtk_popover_set_child(GTK_POPOVER(t->popover), op);
   gtk_menu_button_set_popover(GTK_MENU_BUTTON(menu), t->popover);
 

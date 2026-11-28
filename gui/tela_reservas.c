@@ -7,19 +7,24 @@ typedef struct {
   GtkWidget *lista;
   GtkWidget *total;
   GtkWidget *campo_busca;
-  GtkWidget *caixa_busca;
+  GtkWidget *b_editar;
+  GtkWidget *b_excluir;
   GtkWidget **rows;
   char **chaves_busca;
   int n_linhas;
   int ultimo_n;
   long long ultima_assinatura;
+  int id_excluir;
 } TelaReservas;
 
 static const char *DIAS_SEMANA[] = {
     "Segunda-feira", "Terça-feira", "Quarta-feira", "Quinta-feira",
     "Sexta-feira",   "Sábado",      "Domingo"};
 
+static TelaReservas *g_tela = NULL; // usado pelo atalho Ctrl+F
+
 static void ao_editar(GtkButton *b, gpointer dados);
+static void ao_excluir(GtkButton *b, gpointer dados);
 
 static void estilo_reservas(void) {
   static gboolean carregado = FALSE;
@@ -130,7 +135,6 @@ static void aplicar_filtro_visual(TelaReservas *t) {
   g_strstrip(termo);
 
   int visiveis = 0;
-  GtkListBoxRow *primeira_visivel = NULL;
 
   for (int i = 0; i < t->n_linhas; i++) {
     gboolean casou = TRUE;
@@ -138,18 +142,16 @@ static void aplicar_filtro_visual(TelaReservas *t) {
       casou = (t->chaves_busca[i] && strstr(t->chaves_busca[i], termo) != NULL);
     }
     gtk_widget_set_visible(t->rows[i], casou);
-    if (casou) {
+    if (casou)
       visiveis++;
-      if (!primeira_visivel)
-        primeira_visivel = GTK_LIST_BOX_ROW(t->rows[i]);
-    }
   }
 
-  if (primeira_visivel) {
-    gtk_list_box_select_row(GTK_LIST_BOX(t->lista), primeira_visivel);
-  } else {
+  // se a linha marcada sumiu na busca, desmarca (senao daria para excluir
+  // uma reserva que nem esta aparecendo)
+  GtkListBoxRow *marcada =
+      gtk_list_box_get_selected_row(GTK_LIST_BOX(t->lista));
+  if (marcada && !gtk_widget_get_visible(GTK_WIDGET(marcada)))
     gtk_list_box_unselect_all(GTK_LIST_BOX(t->lista));
-  }
 
   char *txt = NULL;
   if (termo[0] != '\0') {
@@ -235,33 +237,18 @@ static void ao_filtro_mudou(GtkEditable *editavel, gpointer dados) {
   aplicar_filtro_visual((TelaReservas *)dados);
 }
 
-static void ao_buscar_reserva(GtkButton *b, gpointer dados) {
-  (void)b;
+/* Editar e Excluir so ficam ativos com uma reserva marcada. */
+static void ao_selecionar(GtkListBox *lista, GtkListBoxRow *linha,
+                          gpointer dados) {
+  (void)lista;
   TelaReservas *t = (TelaReservas *)dados;
-  if (!t->caixa_busca || !t->campo_busca)
-    return;
-  if (!gtk_widget_get_visible(t->caixa_busca)) {
-    gtk_widget_set_visible(t->caixa_busca, TRUE);
-    gtk_widget_grab_focus(t->campo_busca);
-  } else {
-    const char *txt = gtk_editable_get_text(GTK_EDITABLE(t->campo_busca));
-    if (txt && txt[0] != '\0') {
-      aplicar_filtro_visual(t);
-    } else {
-      gtk_widget_set_visible(t->caixa_busca, FALSE);
-      aplicar_filtro_visual(t);
-    }
-  }
+  gtk_widget_set_sensitive(t->b_editar, linha != NULL);
+  gtk_widget_set_sensitive(t->b_excluir, linha != NULL);
 }
 
-static void ao_limpar_busca(GtkButton *b, gpointer dados) {
-  (void)b;
-  TelaReservas *t = (TelaReservas *)dados;
-  if (t->campo_busca)
-    gtk_editable_set_text(GTK_EDITABLE(t->campo_busca), "");
-  if (t->caixa_busca)
-    gtk_widget_set_visible(t->caixa_busca, FALSE);
-  aplicar_filtro_visual(t);
+void tela_reservas_focar_busca(void) {
+  if (g_tela && g_tela->campo_busca)
+    gtk_widget_grab_focus(g_tela->campo_busca);
 }
 
 static void ao_mostrar(GtkWidget *w, gpointer dados) {
@@ -276,6 +263,7 @@ static void ao_nova(GtkButton *b, gpointer dados) {
 
 GtkWidget *tela_reservas_criar(Estado *e) {
   TelaReservas *t = g_new0(TelaReservas, 1);
+  g_tela = t;
   t->e = e;
   t->ultimo_n = -1;
   estilo_reservas();
@@ -298,43 +286,38 @@ GtkWidget *tela_reservas_criar(Estado *e) {
   gtk_box_append(GTK_BOX(textos), titulo);
   gtk_box_append(GTK_BOX(textos), t->total);
 
-  GtkWidget *b_buscar = gtk_button_new_with_label("Buscar reserva");
-  gtk_widget_add_css_class(b_buscar, "secundario");
-  gtk_widget_set_valign(b_buscar, GTK_ALIGN_START);
-  g_signal_connect(b_buscar, "clicked", G_CALLBACK(ao_buscar_reserva), t);
+  t->b_editar = gtk_button_new_with_label("Editar reserva");
+  gtk_widget_add_css_class(t->b_editar, "secundario");
+  gtk_widget_set_valign(t->b_editar, GTK_ALIGN_START);
+  gtk_widget_set_sensitive(t->b_editar, FALSE);
+  g_signal_connect(t->b_editar, "clicked", G_CALLBACK(ao_editar), t);
 
-  GtkWidget *b_ed = gtk_button_new_with_label("Editar reserva");
-  gtk_widget_add_css_class(b_ed, "secundario");
-  gtk_widget_set_valign(b_ed, GTK_ALIGN_START);
-  g_signal_connect(b_ed, "clicked", G_CALLBACK(ao_editar), t);
+  t->b_excluir = gtk_button_new_with_label("Excluir reserva");
+  gtk_widget_add_css_class(t->b_excluir, "secundario");
+  gtk_widget_add_css_class(t->b_excluir, "excluir");
+  gtk_widget_set_valign(t->b_excluir, GTK_ALIGN_START);
+  gtk_widget_set_sensitive(t->b_excluir, FALSE);
+  g_signal_connect(t->b_excluir, "clicked", G_CALLBACK(ao_excluir), t);
 
   GtkWidget *b = gtk_button_new_with_label("Nova reserva");
   gtk_widget_add_css_class(b, "primario");
   gtk_widget_set_valign(b, GTK_ALIGN_START);
+  gtk_widget_set_tooltip_text(b, "Atalho: Ctrl+N");
   g_signal_connect(b, "clicked", G_CALLBACK(ao_nova), t);
 
   gtk_box_append(GTK_BOX(topo), textos);
-  gtk_box_append(GTK_BOX(topo), b_buscar);
-  gtk_box_append(GTK_BOX(topo), b_ed);
+  gtk_box_append(GTK_BOX(topo), t->b_editar);
+  gtk_box_append(GTK_BOX(topo), t->b_excluir);
   gtk_box_append(GTK_BOX(topo), b);
   gtk_box_append(GTK_BOX(pagina), topo);
 
-  t->caixa_busca = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
-  gtk_widget_set_visible(t->caixa_busca, FALSE);
-  t->campo_busca = gtk_entry_new();
-  gtk_entry_set_placeholder_text(
-      GTK_ENTRY(t->campo_busca),
-      "Buscar reserva salva por atividade, sala, tipo ou responsável...");
+  // campo de busca sempre visivel; o X dentro dele limpa o texto
+  t->campo_busca = gtk_search_entry_new();
+  g_object_set(t->campo_busca, "placeholder-text",
+               "Buscar por aula, sala, professor ou tipo  (Ctrl+F)", NULL);
   gtk_widget_set_hexpand(t->campo_busca, TRUE);
   g_signal_connect(t->campo_busca, "changed", G_CALLBACK(ao_filtro_mudou), t);
-
-  GtkWidget *b_limpar = gtk_button_new_with_label("Limpar");
-  gtk_widget_add_css_class(b_limpar, "secundario");
-  g_signal_connect(b_limpar, "clicked", G_CALLBACK(ao_limpar_busca), t);
-
-  gtk_box_append(GTK_BOX(t->caixa_busca), t->campo_busca);
-  gtk_box_append(GTK_BOX(t->caixa_busca), b_limpar);
-  gtk_box_append(GTK_BOX(pagina), t->caixa_busca);
+  gtk_box_append(GTK_BOX(pagina), t->campo_busca);
 
   GtkWidget *cab =
       linha("Período", "Horário", "Atividade", "Sala", "Tipo", "Responsável");
@@ -343,6 +326,7 @@ GtkWidget *tela_reservas_criar(Estado *e) {
 
   t->lista = gtk_list_box_new();
   gtk_widget_add_css_class(t->lista, "tab-reservas");
+  g_signal_connect(t->lista, "row-selected", G_CALLBACK(ao_selecionar), t);
   GtkWidget *rolagem = gtk_scrolled_window_new();
   gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(rolagem), t->lista);
   gtk_widget_set_vexpand(rolagem, TRUE);
@@ -366,4 +350,38 @@ static void ao_editar(GtkButton *b, gpointer dados) {
   nova_reserva_editar(
       GPOINTER_TO_INT(g_object_get_data(G_OBJECT(linha), "id")));
   interface_ir_para(t->e, "nova");
+}
+
+static void excluir_confirmada(gpointer dados) {
+  TelaReservas *t = (TelaReservas *)dados;
+  char msg[160];
+  int erro = dados_excluir_reserva(t->id_excluir, msg, sizeof msg) < 0;
+  if (!erro)
+    recarregar(t);
+  interface_mensagem(t->e, msg, erro);
+}
+
+static void ao_excluir(GtkButton *b, gpointer dados) {
+  (void)b;
+  TelaReservas *t = (TelaReservas *)dados;
+  GtkListBoxRow *linha = gtk_list_box_get_selected_row(GTK_LIST_BOX(t->lista));
+  if (!linha) {
+    interface_mensagem(t->e, "Selecione uma reserva na lista para excluir.",
+                       TRUE);
+    return;
+  }
+  t->id_excluir = GPOINTER_TO_INT(g_object_get_data(G_OBJECT(linha), "id"));
+  int i = dados_indice_reserva(t->id_excluir);
+  if (i < 0)
+    return;
+  const ReservaVista *r = &g_reservas[i];
+
+  char *titulo = g_strdup_printf("Excluir %s na sala %s?", r->atividade, r->sala);
+  const char *detalhe =
+      r->isRecorrente
+          ? "Essa reserva se repete toda semana. Todas as semanas dela serão "
+            "apagadas, e isso não pode ser desfeito."
+          : "Essa ação não pode ser desfeita.";
+  interface_confirmar(t->e, titulo, detalhe, "Excluir", excluir_confirmada, t);
+  g_free(titulo);
 }

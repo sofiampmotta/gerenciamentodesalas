@@ -5,6 +5,7 @@
 
 #include "alocacao.h"
 #include "aplicacao.h"
+#include "historico.h"
 #include "persistencia.h"
 
 #include <stdio.h>
@@ -413,16 +414,24 @@ static void test_recorrencia_v3(void) {
   PersRelatorio rel;
 
   escrever_texto(ARQ_RES, "#POLI-SALAS;RESERVAS;v3\n"
-                          "1;1;AULA;1;2026-11-16;2027-01-01;SEG;07:10;08:50;"
+                          /* fim antes do inicio */
+                          "1;1;AULA;1;2026-11-16;2026-11-10;SEG;07:10;08:50;"
                           "QUÍMICA (EM);Prof. A\n"
+                          /* ok: termina em 31/12 */
                           "2;1;AULA;1;2026-11-16;2026-12-31;SEG;07:10;08:50;"
                           "QUÍMICA (EM);Prof. A\n"
+                          /* inicio nao cai numa segunda */
                           "3;1;AULA;1;2026-11-17;2026-12-31;SEG;07:10;08:50;"
+                          "QUÍMICA (EM);Prof. A\n"
+                          /* ok: semestre que termina no ano seguinte */
+                          "4;1;AULA;1;2026-11-16;2027-03-05;SEG;10:30;12:10;"
                           "QUÍMICA (EM);Prof. A\n");
   CHECK(pers_carregar_reservas(ARQ_RES, &r, &n, &rel) == PERS_OK);
-  CHECK(n == 1 && rel.linhas_invalidas == 2);
+  CHECK(n == 2 && rel.linhas_invalidas == 2);
   CHECK(r != NULL && r[0].id == 2 && r[0].data.dia == 16 &&
         r[0].dataFim.dia == 31);
+  CHECK(r != NULL && r[1].id == 4 && r[1].dataFim.dia == 5 &&
+        r[1].dataFim.mes == 3 && r[1].dataFim.ano == 2027);
   pers_liberar(r);
   limpar(ARQ_RES);
 }
@@ -460,6 +469,50 @@ static void test_servico_aplicacao(void) {
 
   pontual.data = (Data){4, 1, 2027};
   CHECK(aplicacao_buscar_conflito_reserva(&app, &pontual, 0, NULL) == 0);
+
+  aplicacao_finalizar(&app);
+  limpar(ARQ_SAL);
+  limpar(ARQ_RES);
+}
+
+/* "A-03", "A03", "a 03" e "A.03" contam como a mesma sala. */
+static void test_nome_de_sala_parecido(void) {
+  Aplicacao app;
+  Sala a03 = sala(0, "A-03");
+  Sala a04 = sala(0, "A-04");
+
+  limpar(ARQ_SAL);
+  limpar(ARQ_RES);
+  memset(&app, 0, sizeof app);
+  if (!aplicacao_iniciar(&app, ARQ_SAL, ARQ_RES)) {
+    CHECK(0);
+    return;
+  }
+  CHECK(aplicacao_salvar_sala(&app, &a03));
+  CHECK(aplicacao_salvar_sala(&app, &a04));
+
+  /* escritas diferentes da mesma sala sao recusadas */
+  Sala repetida = sala(0, "A03");
+  CHECK(!aplicacao_salvar_sala(&app, &repetida));
+  repetida = sala(0, "a 03");
+  CHECK(!aplicacao_salvar_sala(&app, &repetida));
+  repetida = sala(0, "A.03");
+  CHECK(!aplicacao_salvar_sala(&app, &repetida));
+  CHECK(app.quantidadeSalas == 2);
+
+  /* a busca encontra a sala original */
+  Sala *achada = aplicacao_buscar_sala_por_nome(&app, "a03", 0);
+  CHECK(achada != NULL && strcmp(achada->nome, "A-03") == 0);
+  CHECK(aplicacao_buscar_sala_por_nome(&app, "A-05", 0) == NULL);
+
+  /* editar: nao pode virar o nome de outra sala, mas pode manter o proprio */
+  Sala editada = a04;
+  strcpy(editada.nome, "a03");
+  CHECK(!aplicacao_editar_sala(&app, a04.id, editada));
+  strcpy(editada.nome, "A04");
+  editada.capacidade = 50;
+  CHECK(aplicacao_editar_sala(&app, a04.id, editada));
+  CHECK(aplicacao_buscar_sala(&app, a04.id)->capacidade == 50);
 
   aplicacao_finalizar(&app);
   limpar(ARQ_SAL);
@@ -638,50 +691,28 @@ static void test_muitos_registros(void) {
   limpar(ARQ_RES);
 }
 
-/* Carrega os dados reais da planilha 2026.2 e confere que nada se perde. */
+/* Carrega as salas reais de 2026.2 e confere que nada se perde.
+   (As aulas nao ficam mais em dados_exemplo: entram pela importacao do PDF.) */
 static void test_dados_reais_2026_2(void) {
   Sala *s = NULL, *s2 = NULL;
-  Reserva *r = NULL, *r2 = NULL;
-  size_t ns = 0, nr = 0, ns2 = 0, nr2 = 0, i, j;
+  size_t ns = 0, ns2 = 0, i;
   PersRelatorio rel;
-  int refs_ok = 1, iguais = 1;
+  int iguais = 1;
 
   CHECK(pers_carregar_salas(DADOS_DIR "salas.csv", &s, &ns, &rel) == PERS_OK);
   CHECK(!rel.arquivo_ausente && rel.linhas_invalidas == 0 && ns == 42);
 
-  CHECK(pers_carregar_reservas(DADOS_DIR "reservas.csv", &r, &nr, &rel) ==
-        PERS_OK);
-  CHECK(!rel.arquivo_ausente && rel.linhas_invalidas == 0 && nr == 794);
-
-  /* toda reserva aponta para uma sala existente */
-  for (i = 0; i < nr; i++) {
-    int achou = 0;
-    for (j = 0; j < ns && !achou; j++)
-      achou = r[i].idSala == s[j].id;
-    refs_ok = refs_ok && achou;
-  }
-  CHECK(refs_ok);
-
-  /* salvar e carregar de novo devolve exatamente os mesmos dados */
+  /* salvar e carregar de novo devolve exatamente as mesmas salas */
   limpar(ARQ_SAL);
-  limpar(ARQ_RES);
   CHECK(pers_salvar_salas(ARQ_SAL, s, ns) == PERS_OK);
-  CHECK(pers_salvar_reservas(ARQ_RES, r, nr) == PERS_OK);
   CHECK(pers_carregar_salas(ARQ_SAL, &s2, &ns2, NULL) == PERS_OK && ns2 == ns);
-  CHECK(pers_carregar_reservas(ARQ_RES, &r2, &nr2, NULL) == PERS_OK &&
-        nr2 == nr);
   for (i = 0; s2 && i < ns2 && i < ns; i++)
     iguais = iguais && salas_iguais(&s[i], &s2[i]);
-  for (i = 0; r2 && i < nr2 && i < nr; i++)
-    iguais = iguais && reservas_iguais(&r[i], &r2[i]);
   CHECK(iguais);
 
   pers_liberar(s);
-  pers_liberar(r);
   pers_liberar(s2);
-  pers_liberar(r2);
   limpar(ARQ_SAL);
-  limpar(ARQ_RES);
 }
 
 static void test_migrar_txt_para_csv(void) {
@@ -738,6 +769,214 @@ static void test_migrar_txt_para_csv(void) {
     t();                                                                       \
   } while (0)
 
+/* Sala com reservas nao pode ser excluida; reserva excluida some do arquivo. */
+static void test_excluir(void) {
+  Aplicacao app;
+  Sala i03 = sala(0, "I-03");
+  Sala i04 = sala(0, "I-04");
+
+  limpar(ARQ_SAL);
+  limpar(ARQ_RES);
+  memset(&app, 0, sizeof app);
+  if (!aplicacao_iniciar(&app, ARQ_SAL, ARQ_RES)) {
+    CHECK(0);
+    return;
+  }
+  CHECK(aplicacao_salvar_sala(&app, &i03));
+  CHECK(aplicacao_salvar_sala(&app, &i04));
+  Reserva r = aula(0, i03.id, SEG, H(8, 0), H(10, 0));
+  CHECK(aplicacao_salvar_reserva(&app, r));
+  int idReserva = app.reservas[0].id;
+
+  CHECK(aplicacao_contar_reservas_da_sala(&app, i03.id) == 1);
+  CHECK(aplicacao_contar_reservas_da_sala(&app, i04.id) == 0);
+
+  /* I-03 tem reserva: recusa e nao mexe em nada */
+  CHECK(!aplicacao_excluir_sala(&app, i03.id));
+  CHECK(app.quantidadeSalas == 2);
+
+  /* I-04 esta livre: pode excluir */
+  CHECK(aplicacao_excluir_sala(&app, i04.id));
+  CHECK(app.quantidadeSalas == 1 && aplicacao_buscar_sala(&app, i04.id) == NULL);
+
+  /* excluindo a reserva, a I-03 fica livre para excluir */
+  CHECK(aplicacao_excluir_reserva(&app, idReserva));
+  CHECK(app.quantidadeReservas == 0);
+  CHECK(aplicacao_excluir_sala(&app, i03.id));
+  CHECK(!aplicacao_excluir_sala(&app, i03.id)); /* ja nao existe */
+  aplicacao_finalizar(&app);
+
+  /* confere que ficou gravado no arquivo */
+  memset(&app, 0, sizeof app);
+  CHECK(aplicacao_iniciar(&app, ARQ_SAL, ARQ_RES));
+  CHECK(app.quantidadeSalas == 0 && app.quantidadeReservas == 0);
+  aplicacao_finalizar(&app);
+  limpar(ARQ_SAL);
+  limpar(ARQ_RES);
+}
+
+/* Cada alteracao vira uma linha em historico.csv, com o nome do perfil. */
+static void test_historico(void) {
+  Aplicacao app;
+  RegistroHistorico *h = NULL;
+  size_t n = 0;
+
+  limpar(ARQ_SAL);
+  limpar(ARQ_RES);
+  remove("historico.csv");
+  remove("perfil.txt");
+
+  memset(&app, 0, sizeof app);
+  if (!aplicacao_iniciar(&app, ARQ_SAL, ARQ_RES)) {
+    CHECK(0);
+    return;
+  }
+  CHECK(strcmp(app.usuario, "Leidjane") == 0); /* sem perfil.txt */
+  CHECK(aplicacao_definir_usuario(&app, "Heloísa", "DATP"));
+
+  Sala i03 = sala(0, "I-03"), i04 = sala(0, "I-04");
+  CHECK(aplicacao_salvar_sala(&app, &i03));
+  CHECK(aplicacao_salvar_sala(&app, &i04));
+  Sala maior = i03;
+  maior.capacidade = 50;
+  CHECK(aplicacao_editar_sala(&app, i03.id, maior));
+
+  Reserva r = aula(0, i03.id, SEG, H(7, 30), H(9, 10));
+  CHECK(aplicacao_salvar_reserva(&app, r));
+  int id = app.reservas[0].id;
+  Reserva mudada = app.reservas[0];
+  mudada.idSala = i04.id;
+  CHECK(aplicacao_editar_reserva(&app, id, mudada));
+  CHECK(aplicacao_excluir_reserva(&app, id));
+  aplicacao_finalizar(&app);
+
+  CHECK(historico_carregar("historico.csv", &h, &n));
+  CHECK(n == 6);
+  if (n == 6) {
+    CHECK(strcmp(h[0].acao, "Criou sala") == 0);
+    CHECK(strcmp(h[2].acao, "Editou sala") == 0);
+    CHECK(strcmp(h[2].detalhe, "I-03: lugares 40 → 50") == 0);
+    CHECK(strcmp(h[3].acao, "Criou reserva") == 0);
+    CHECK(strcmp(h[4].detalhe, "DEB CÁLCULO 1 (TC): sala I-03 → I-04") == 0);
+    CHECK(strcmp(h[5].acao, "Excluiu reserva") == 0);
+    CHECK(strcmp(h[5].quem, "Heloísa") == 0);
+    CHECK(strlen(h[5].data) == 10 && strlen(h[5].hora) == 5);
+  }
+  historico_liberar(h);
+
+  /* o nome continua salvo quando o sistema abre de novo */
+  memset(&app, 0, sizeof app);
+  CHECK(aplicacao_iniciar(&app, ARQ_SAL, ARQ_RES));
+  CHECK(strcmp(app.usuario, "Heloísa") == 0 && strcmp(app.setor, "DATP") == 0);
+  aplicacao_finalizar(&app);
+
+  /* ';' e quebra de linha nao estragam o arquivo */
+  CHECK(historico_registrar("historico.csv", "Ana", "Teste", "a;b\nc"));
+  CHECK(historico_carregar("historico.csv", &h, &n));
+  CHECK(n == 7 && strcmp(h[6].detalhe, "a,b c") == 0);
+  historico_liberar(h);
+
+  /* sem arquivo ainda: historico vazio, sem erro */
+  remove("historico.csv");
+  CHECK(historico_carregar("historico.csv", &h, &n) && n == 0 && h == NULL);
+
+  limpar(ARQ_SAL);
+  limpar(ARQ_RES);
+  remove("perfil.txt");
+}
+
+/* Cancelar um dia de uma aula semanal libera a sala so naquele dia. */
+static void test_cancelar_um_dia(void) {
+  Aplicacao app;
+  limpar(ARQ_SAL);
+  limpar(ARQ_RES);
+  remove("cancelamentos.csv");
+  remove("historico.csv");
+
+  memset(&app, 0, sizeof app);
+  if (!aplicacao_iniciar(&app, ARQ_SAL, ARQ_RES)) {
+    CHECK(0);
+    return;
+  }
+  Sala i03 = sala(0, "I-03");
+  CHECK(aplicacao_salvar_sala(&app, &i03));
+  /* toda segunda, 07:30-09:10, de 16/11 a 31/12/2026 */
+  CHECK(aplicacao_salvar_reserva(&app, aula(0, i03.id, SEG, H(7, 30), H(9, 10))));
+  int id = app.reservas[0].id;
+
+  Data seg30 = {30, 11, 2026}, ter01 = {1, 12, 2026}, seg07 = {7, 12, 2026};
+  Data depois = {4, 1, 2027};
+
+  CHECK(aplicacao_cancelar_dia(&app, id, seg30, "Feriado"));
+  CHECK(aplicacao_dia_cancelado(&app, id, seg30));
+  CHECK(!aplicacao_dia_cancelado(&app, id, seg07));
+  CHECK(!aplicacao_cancelar_dia(&app, id, seg30, "")); /* ja cancelado */
+  CHECK(!aplicacao_cancelar_dia(&app, id, ter01, "")); /* nao e segunda */
+  CHECK(!aplicacao_cancelar_dia(&app, id, depois, "")); /* depois do fim */
+
+  /* prova no dia 30/11 no mesmo horario: agora pode */
+  Reserva prova = aula(0, i03.id, SEG, H(8, 0), H(9, 0));
+  prova.isRecorrente = false;
+  prova.data = seg30;
+  prova.dataFim = (Data){0, 0, 0};
+  CHECK(aplicacao_buscar_conflito_reserva(&app, &prova, 0, NULL) == 0);
+  CHECK(aplicacao_salvar_reserva(&app, prova));
+  int idProva = app.reservas[1].id;
+
+  /* no dia 07/12 a aula continua, entao da conflito */
+  prova.data = seg07;
+  CHECK(aplicacao_buscar_conflito_reserva(&app, &prova, 0, NULL) == 1);
+
+  /* com a prova marcada, nao da para desfazer o cancelamento do dia 30 */
+  CHECK(!aplicacao_desfazer_cancelamento(&app, id, seg30));
+  CHECK(aplicacao_excluir_reserva(&app, idProva));
+  aplicacao_finalizar(&app);
+
+  /* o cancelamento continua gravado quando o sistema abre de novo */
+  memset(&app, 0, sizeof app);
+  CHECK(aplicacao_iniciar(&app, ARQ_SAL, ARQ_RES));
+  CHECK(app.quantidadeCancelamentos == 1);
+  CHECK(aplicacao_dia_cancelado(&app, id, seg30));
+  if (app.quantidadeCancelamentos == 1)
+    CHECK(strcmp(app.cancelamentos[0].motivo, "Feriado") == 0);
+
+  /* sem a prova, desfazer funciona */
+  CHECK(aplicacao_desfazer_cancelamento(&app, id, seg30));
+  CHECK(!aplicacao_dia_cancelado(&app, id, seg30));
+  CHECK(!aplicacao_desfazer_cancelamento(&app, id, seg30));
+
+  /* excluindo a reserva, os dias cancelados dela somem junto */
+  CHECK(aplicacao_cancelar_dia(&app, id, seg07, ""));
+  CHECK(aplicacao_excluir_reserva(&app, id));
+  CHECK(app.quantidadeCancelamentos == 0);
+  aplicacao_finalizar(&app);
+
+  /* arquivo com linha estragada: so ela e pulada */
+  FILE *f = fopen("cancelamentos.csv", "w");
+  if (f != NULL) {
+    fputs("#POLI-SALAS;CANCELAMENTOS;v1\n5;2026-11-30;Feriado\n"
+          "x;2026-11-30;\n5;2026-02-30;\n5;2026-11-30;Repetido\n", f);
+    fclose(f);
+  }
+  Cancelamento *lidos = NULL;
+  size_t n = 0;
+  PersRelatorio rel;
+  CHECK(pers_carregar_cancelamentos("cancelamentos.csv", &lidos, &n, &rel) ==
+        PERS_OK);
+  CHECK(n == 1 && rel.linhas_invalidas == 3);
+  pers_liberar(lidos);
+
+  /* motivo com ';' nao e gravado */
+  Cancelamento ruim = {5, {30, 11, 2026}, "a;b"};
+  CHECK(pers_salvar_cancelamentos("cancelamentos.csv", &ruim, 1) ==
+        PERS_ERRO_DADO_INVALIDO);
+
+  limpar(ARQ_SAL);
+  limpar(ARQ_RES);
+  limpar("cancelamentos.csv");
+  remove("historico.csv");
+}
+
 int main(void) {
   printf("Testes do modulo de persistencia\n");
   RODAR(test_salas_ida_e_volta);
@@ -750,6 +989,10 @@ int main(void) {
   RODAR(test_linhas_invalidas_reservas);
   RODAR(test_recorrencia_v3);
   RODAR(test_servico_aplicacao);
+  RODAR(test_nome_de_sala_parecido);
+  RODAR(test_excluir);
+  RODAR(test_historico);
+  RODAR(test_cancelar_um_dia);
   RODAR(test_crlf_e_bom);
   RODAR(test_salvar_dado_invalido_nao_altera_arquivo);
   RODAR(test_gravacao_segura_backup);

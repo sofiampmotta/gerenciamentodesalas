@@ -1,12 +1,14 @@
+#include "../include/aplicacao.h"
 #include "interface.h"
 #ifdef _WIN32
 #include <gdk/win32/gdkwin32.h>
 #include <windows.h>
 #endif
 
-static const char *NOMES[5] = {"inicio", "visao", "busca", "reservas", "salas"};
-static const char *TITULOS[5] = {"Início", "Visão geral", "Buscar salas",
-                                 "Reservas", "Salas"};
+static const char *NOMES[6] = {"inicio",   "visao", "busca",
+                               "reservas", "salas", "historico"};
+static const char *TITULOS[6] = {"Início",   "Visão geral", "Buscar salas",
+                                 "Reservas", "Salas",       "Histórico"};
 
 static guint g_timer_status = 0;
 
@@ -36,6 +38,185 @@ void interface_mensagem(Estado *e, const char *texto, gboolean erro) {
 
   g_timer_status =
       g_timeout_add_seconds(3, limpar_mensagem_status, e->barra_status);
+}
+
+/* Janela "tem certeza?" usada antes de excluir. */
+typedef struct {
+  void (*ao_confirmar)(gpointer);
+  gpointer dados;
+} Confirmacao;
+
+#if GTK_CHECK_VERSION(4, 10, 0)
+static void ao_responder_confirmacao(GObject *origem, GAsyncResult *res,
+                                     gpointer dados) {
+  Confirmacao *c = (Confirmacao *)dados;
+  GError *erro = NULL;
+  int escolha =
+      gtk_alert_dialog_choose_finish(GTK_ALERT_DIALOG(origem), res, &erro);
+  if (erro)
+    g_error_free(erro);
+  else if (escolha == 1)
+    c->ao_confirmar(c->dados);
+  g_free(c);
+}
+#else
+static void ao_responder_confirmacao(GtkDialog *dialog, int resposta,
+                                     gpointer dados) {
+  Confirmacao *c = (Confirmacao *)dados;
+  gtk_window_destroy(GTK_WINDOW(dialog));
+  if (resposta == GTK_RESPONSE_ACCEPT)
+    c->ao_confirmar(c->dados);
+  g_free(c);
+}
+#endif
+
+void interface_confirmar(Estado *e, const char *titulo, const char *detalhe,
+                         const char *botao, void (*ao_confirmar)(gpointer),
+                         gpointer dados) {
+  Confirmacao *c = g_new(Confirmacao, 1);
+  c->ao_confirmar = ao_confirmar;
+  c->dados = dados;
+  GtkWindow *janela = e && e->janela ? GTK_WINDOW(e->janela) : NULL;
+
+#if GTK_CHECK_VERSION(4, 10, 0)
+  const char *botoes[] = {"Cancelar", botao, NULL};
+  GtkAlertDialog *alerta = gtk_alert_dialog_new("%s", titulo);
+  gtk_alert_dialog_set_detail(alerta, detalhe);
+  gtk_alert_dialog_set_buttons(alerta, botoes);
+  gtk_alert_dialog_set_cancel_button(alerta, 0);
+  gtk_alert_dialog_set_default_button(alerta, 0);
+  gtk_alert_dialog_choose(alerta, janela, NULL, ao_responder_confirmacao, c);
+  g_object_unref(alerta);
+#else
+  GtkWidget *dialog = gtk_message_dialog_new(
+      janela, GTK_DIALOG_MODAL | GTK_DIALOG_DESTROY_WITH_PARENT,
+      GTK_MESSAGE_WARNING, GTK_BUTTONS_NONE, "%s", titulo);
+  gtk_message_dialog_format_secondary_text(GTK_MESSAGE_DIALOG(dialog), "%s",
+                                           detalhe);
+  gtk_dialog_add_button(GTK_DIALOG(dialog), "Cancelar", GTK_RESPONSE_CANCEL);
+  gtk_dialog_add_button(GTK_DIALOG(dialog), botao, GTK_RESPONSE_ACCEPT);
+  g_signal_connect(dialog, "response", G_CALLBACK(ao_responder_confirmacao), c);
+  gtk_widget_show(dialog);
+#endif
+}
+
+/* ---- Caixinha "Quem está usando?" ---- */
+typedef struct {
+  Estado *e;
+  GtkWidget *popover, *nome, *setor;
+} Perfil;
+
+static void ao_abrir_perfil(GtkWidget *w, gpointer dados) {
+  (void)w;
+  Perfil *p = (Perfil *)dados;
+  Aplicacao *app = aplicacao_padrao();
+  if (app == NULL)
+    return;
+  gtk_editable_set_text(GTK_EDITABLE(p->nome), app->usuario);
+  gtk_editable_set_text(GTK_EDITABLE(p->setor), app->setor);
+}
+
+static void ao_salvar_perfil(GtkWidget *w, gpointer dados) {
+  (void)w;
+  Perfil *p = (Perfil *)dados;
+  char nome[64], setor[32];
+  g_strlcpy(nome, gtk_editable_get_text(GTK_EDITABLE(p->nome)), sizeof nome);
+  g_strlcpy(setor, gtk_editable_get_text(GTK_EDITABLE(p->setor)), sizeof setor);
+  g_strstrip(nome);
+  g_strstrip(setor);
+
+  if (nome[0] == '\0') {
+    interface_mensagem(p->e, "Digite o nome de quem está usando.", TRUE);
+    return;
+  }
+  if (!aplicacao_definir_usuario(aplicacao_padrao(), nome, setor)) {
+    interface_mensagem(p->e, "Não foi possível salvar o nome.", TRUE);
+    return;
+  }
+  gtk_label_set_text(GTK_LABEL(p->e->rotulo_nome), nome);
+  gtk_label_set_text(GTK_LABEL(p->e->rotulo_setor), setor);
+  gtk_popover_popdown(GTK_POPOVER(p->popover));
+
+  char *msg = g_strdup_printf("As alterações agora ficam registradas como %s.",
+                              nome);
+  interface_mensagem(p->e, msg, FALSE);
+  g_free(msg);
+  tutorial_se_primeira_vez(p->e); // pessoa nova tambem ve o tutorial
+}
+
+static void ao_ver_tutorial(GtkButton *b, gpointer dados) {
+  (void)b;
+  Perfil *p = (Perfil *)dados;
+  gtk_popover_popdown(GTK_POPOVER(p->popover));
+  tutorial_iniciar(p->e);
+}
+
+static void ao_cancelar_perfil(GtkButton *b, gpointer dados) {
+  (void)b;
+  gtk_popover_popdown(GTK_POPOVER(((Perfil *)dados)->popover));
+}
+
+static GtkWidget *campo_perfil(GtkWidget *caixa, const char *rotulo,
+                               int max) {
+  GtkWidget *l = gtk_label_new(rotulo);
+  gtk_label_set_xalign(GTK_LABEL(l), 0);
+  gtk_widget_add_css_class(l, "subtitulo");
+  GtkWidget *campo = gtk_entry_new();
+  gtk_entry_set_max_length(GTK_ENTRY(campo), max);
+  gtk_box_append(GTK_BOX(caixa), l);
+  gtk_box_append(GTK_BOX(caixa), campo);
+  return campo;
+}
+
+static GtkWidget *criar_perfil(Estado *e) {
+  Perfil *p = g_new0(Perfil, 1);
+  p->e = e;
+
+  GtkWidget *caixa = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
+  gtk_widget_set_margin_top(caixa, 10);
+  gtk_widget_set_margin_bottom(caixa, 10);
+  gtk_widget_set_margin_start(caixa, 10);
+  gtk_widget_set_margin_end(caixa, 10);
+  gtk_widget_set_size_request(caixa, 280, -1);
+
+  GtkWidget *titulo = gtk_label_new("Quem está usando?");
+  gtk_widget_add_css_class(titulo, "negrito");
+  gtk_label_set_xalign(GTK_LABEL(titulo), 0);
+  GtkWidget *dica = gtk_label_new("Esse nome aparece no histórico de alterações.");
+  gtk_widget_add_css_class(dica, "subtitulo");
+  gtk_label_set_xalign(GTK_LABEL(dica), 0);
+  gtk_label_set_wrap(GTK_LABEL(dica), TRUE);
+  gtk_box_append(GTK_BOX(caixa), titulo);
+  gtk_box_append(GTK_BOX(caixa), dica);
+
+  p->nome = campo_perfil(caixa, "Nome", 60);
+  p->setor = campo_perfil(caixa, "Setor", 30);
+  g_signal_connect(p->nome, "activate", G_CALLBACK(ao_salvar_perfil), p);
+  g_signal_connect(p->setor, "activate", G_CALLBACK(ao_salvar_perfil), p);
+
+  GtkWidget *botoes = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+  gtk_widget_set_margin_top(botoes, 8);
+  GtkWidget *b_salvar = gtk_button_new_with_label("Salvar");
+  gtk_widget_add_css_class(b_salvar, "primario");
+  g_signal_connect(b_salvar, "clicked", G_CALLBACK(ao_salvar_perfil), p);
+  GtkWidget *b_cancelar = gtk_button_new_with_label("Cancelar");
+  gtk_widget_add_css_class(b_cancelar, "secundario");
+  g_signal_connect(b_cancelar, "clicked", G_CALLBACK(ao_cancelar_perfil), p);
+  gtk_box_append(GTK_BOX(botoes), b_salvar);
+  gtk_box_append(GTK_BOX(botoes), b_cancelar);
+  gtk_box_append(GTK_BOX(caixa), botoes);
+
+  GtkWidget *b_tutorial = gtk_button_new_with_label("Ver o tutorial");
+  gtk_widget_add_css_class(b_tutorial, "tutorial-pular");
+  gtk_widget_set_halign(b_tutorial, GTK_ALIGN_START);
+  gtk_widget_set_margin_top(b_tutorial, 4);
+  g_signal_connect(b_tutorial, "clicked", G_CALLBACK(ao_ver_tutorial), p);
+  gtk_box_append(GTK_BOX(caixa), b_tutorial);
+
+  p->popover = gtk_popover_new();
+  gtk_popover_set_child(GTK_POPOVER(p->popover), caixa);
+  g_signal_connect(p->popover, "show", G_CALLBACK(ao_abrir_perfil), p);
+  return p->popover;
 }
 
 static void ao_menu(GtkToggleButton *b, gpointer dados) {
@@ -69,7 +250,7 @@ static GtkWidget *criar_menu(Estado *e) {
   gtk_box_append(GTK_BOX(menu), tag_sistema);
 
   GtkWidget *primeiro = NULL;
-  for (int i = 0; i < 5; i++) {
+  for (int i = 0; i < 6; i++) {
     GtkWidget *b = gtk_toggle_button_new_with_label(TITULOS[i]);
     gtk_widget_add_css_class(b, "menu");
     gtk_widget_set_hexpand(b, TRUE);
@@ -96,26 +277,35 @@ static GtkWidget *criar_menu(Estado *e) {
   GtkWidget *chave_tema = tema_criar_chave();
   gtk_box_append(GTK_BOX(rodape), chave_tema);
 
+  // quem esta usando; clicando, abre a caixinha para trocar o nome
+  Aplicacao *app = aplicacao_padrao();
   GtkWidget *caixa_usuario = gtk_box_new(GTK_ORIENTATION_VERTICAL, 2);
-  gtk_widget_set_margin_start(caixa_usuario, 14);
-  gtk_widget_set_margin_end(caixa_usuario, 14);
 
-  e->rotulo_nome = gtk_label_new("Leidjane");
+  e->rotulo_nome = gtk_label_new(app ? app->usuario : "Leidjane");
   gtk_widget_add_css_class(e->rotulo_nome, "usuario-nome");
   gtk_label_set_xalign(GTK_LABEL(e->rotulo_nome), 0);
 
-  e->rotulo_setor = gtk_label_new("DATP");
+  e->rotulo_setor = gtk_label_new(app ? app->setor : "DATP");
   gtk_widget_add_css_class(e->rotulo_setor, "usuario-info");
   gtk_label_set_xalign(GTK_LABEL(e->rotulo_setor), 0);
 
-  GtkWidget *u3 = gtk_label_new("Sistema local");
+  GtkWidget *u3 = gtk_label_new("Clique para trocar");
   gtk_widget_add_css_class(u3, "usuario-info");
   gtk_label_set_xalign(GTK_LABEL(u3), 0);
 
   gtk_box_append(GTK_BOX(caixa_usuario), e->rotulo_nome);
   gtk_box_append(GTK_BOX(caixa_usuario), e->rotulo_setor);
   gtk_box_append(GTK_BOX(caixa_usuario), u3);
-  gtk_box_append(GTK_BOX(rodape), caixa_usuario);
+
+  GtkWidget *b_perfil = gtk_menu_button_new();
+  gtk_widget_add_css_class(b_perfil, "perfil");
+  gtk_widget_set_margin_start(b_perfil, 8);
+  gtk_widget_set_margin_end(b_perfil, 8);
+  gtk_menu_button_set_child(GTK_MENU_BUTTON(b_perfil), caixa_usuario);
+  gtk_menu_button_set_direction(GTK_MENU_BUTTON(b_perfil), GTK_ARROW_RIGHT);
+  gtk_menu_button_set_popover(GTK_MENU_BUTTON(b_perfil), criar_perfil(e));
+  gtk_box_append(GTK_BOX(rodape), b_perfil);
+  e->botao_perfil = b_perfil;
 
   gtk_box_append(GTK_BOX(menu), rodape);
 
@@ -130,6 +320,40 @@ static gboolean ao_atalho_minimizar(GtkWidget *widget, GVariant *args,
   g_print("Acionando gtk_window_minimize...\n");
   gtk_window_minimize(win);
   return TRUE;
+}
+
+static gboolean ao_atalho_nova_reserva(GtkWidget *widget, GVariant *args,
+                                       gpointer dados) {
+  (void)widget;
+  (void)args;
+  interface_ir_para((Estado *)dados, "nova");
+  return TRUE;
+}
+
+static gboolean ao_atalho_buscar(GtkWidget *widget, GVariant *args,
+                                 gpointer dados) {
+  (void)widget;
+  (void)args;
+  interface_ir_para((Estado *)dados, "reservas");
+  tela_reservas_focar_busca();
+  return TRUE;
+}
+
+static gboolean ao_atalho_tutorial(GtkWidget *widget, GVariant *args,
+                                   gpointer dados) {
+  (void)widget;
+  (void)args;
+  tutorial_iniciar((Estado *)dados);
+  return TRUE;
+}
+
+static void adicionar_atalho(GtkEventController *controle, const char *teclas,
+                             GtkShortcutFunc funcao, gpointer dados) {
+  GtkShortcut *atalho =
+      gtk_shortcut_new(gtk_shortcut_trigger_parse_string(teclas),
+                       gtk_callback_action_new(funcao, dados, NULL));
+  gtk_shortcut_controller_add_shortcut(GTK_SHORTCUT_CONTROLLER(controle),
+                                       atalho);
 }
 
 static void ao_notificar_minimizado(GObject *obj, GParamSpec *pspec,
@@ -182,6 +406,7 @@ static void ativar(GtkApplication *app, gpointer dados) {
   gtk_stack_add_named(GTK_STACK(e->stack), tela_reservas_criar(e), "reservas");
   gtk_stack_add_named(GTK_STACK(e->stack), tela_salas_criar(e), "salas");
   gtk_stack_add_named(GTK_STACK(e->stack), tela_nova_reserva_criar(e), "nova");
+  gtk_stack_add_named(GTK_STACK(e->stack), tela_historico_criar(e), "historico");
 
   e->barra_status = gtk_label_new("");
   gtk_widget_add_css_class(e->barra_status, "barra-status");
@@ -209,18 +434,19 @@ static void ativar(GtkApplication *app, gpointer dados) {
 
   e->raiz = app_raiz;
   gtk_window_set_child(GTK_WINDOW(e->janela), e->raiz);
-  GtkEventController *key_ctrl = gtk_shortcut_controller_new();
-  GtkShortcutTrigger *trigger = gtk_shortcut_trigger_parse_string("<Control>m");
-  GtkShortcutAction *action =
-      gtk_callback_action_new(ao_atalho_minimizar, e->janela, NULL);
-  GtkShortcut *shortcut = gtk_shortcut_new(trigger, action);
-  gtk_shortcut_controller_add_shortcut(GTK_SHORTCUT_CONTROLLER(key_ctrl),
-                                       shortcut);
-  gtk_widget_add_controller(e->janela, key_ctrl);
+  // atalhos de teclado: Ctrl+M minimiza, Ctrl+N abre nova reserva,
+  // Ctrl+F vai para a busca de reservas e F1 abre o tutorial
+  GtkEventController *atalhos = gtk_shortcut_controller_new();
+  adicionar_atalho(atalhos, "<Control>m", ao_atalho_minimizar, e->janela);
+  adicionar_atalho(atalhos, "<Control>n", ao_atalho_nova_reserva, e);
+  adicionar_atalho(atalhos, "<Control>f", ao_atalho_buscar, e);
+  adicionar_atalho(atalhos, "F1", ao_atalho_tutorial, e);
+  gtk_widget_add_controller(e->janela, atalhos);
   gtk_window_present(GTK_WINDOW(e->janela));
   g_signal_connect(e->janela, "notify::minimized",
                    G_CALLBACK(ao_notificar_minimizado), NULL);
   interface_mensagem(e, "POLI - Gestão de Ambientes", FALSE);
+  tutorial_se_primeira_vez(e);
 }
 
 int interface_iniciar(int argc, char **argv) {

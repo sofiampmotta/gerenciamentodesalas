@@ -62,4 +62,12 @@ typedef struct reserva{
   Data dataFim;
 } Reserva;
 
+// Um dia em que uma reserva recorrente nao acontece (feriado, falta do
+// professor, prova em outra sala...). As outras semanas continuam normais.
+typedef struct cancelamento{
+  int idReserva;
+  Data data;
+  char motivo[60];
+} Cancelamento;
+
 #endif
