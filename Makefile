@@ -34,6 +34,7 @@ clean:
 TEST_BIN = build/test_persistencia
 TEST_EXPORT_BIN = build/test_exportacao
 TEST_LEITOR_BIN = build/test_leitor_pdf
+TEST_AGENDA_BIN = build/test_agenda
 
 $(TEST_BIN): src/persistencia.c src/alocacao.c src/aplicacao.c tests/test_persistencia.c include/persistencia.h include/salas.h include/alocacao.h include/aplicacao.h
 	@mkdir -p build
@@ -47,8 +48,12 @@ $(TEST_LEITOR_BIN): src/leitor_pdf.c src/persistencia.c src/alocacao.c src/aplic
 	@mkdir -p build
 	$(CC) -std=c99 -Wall -Wextra -Iinclude src/leitor_pdf.c src/persistencia.c src/alocacao.c src/aplicacao.c tests/test_leitor_pdf.c -o $@
 
-test: $(TEST_BIN) $(TEST_EXPORT_BIN) $(TEST_LEITOR_BIN)
-	cd build && ./test_persistencia && ./test_exportacao && ./test_leitor_pdf
+$(TEST_AGENDA_BIN): src/agenda.c tests/test_agenda.c include/agenda.h include/salas.h
+	@mkdir -p build
+	$(CC) -std=c99 -Wall -Wextra -Iinclude src/agenda.c tests/test_agenda.c -o $@
+
+test: $(TEST_BIN) $(TEST_EXPORT_BIN) $(TEST_LEITOR_BIN) $(TEST_AGENDA_BIN)
+	cd build && ./test_persistencia && ./test_exportacao && ./test_leitor_pdf && ./test_agenda
 
 format:
 	$(CLANG_FORMAT) --style=LLVM -i $(C_FILES)

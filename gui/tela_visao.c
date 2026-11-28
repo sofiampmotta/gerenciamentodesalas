@@ -1,3 +1,4 @@
+#include "../include/agenda.h"
 #include "../include/exportacao.h"
 #include "../include/leitor_pdf.h"
 #include "interface.h"
@@ -671,6 +672,90 @@ static void ao_csv(GtkButton *b, gpointer dados) {
   (void)b;
   exportar((TelaVisao *)dados, FALSE);
 }
+
+/* ---- exportar agenda (.ics) ----
+   Exporta o período inteiro (não só o dia exibido), respeitando os filtros
+   de tipo e de sala. Abre no Google Agenda, no Outlook e no celular. */
+static void ao_salvar_agenda(GtkNativeDialog *dialog, int resposta,
+                             gpointer dados) {
+  TelaVisao *t = dados;
+  if (resposta == GTK_RESPONSE_ACCEPT) {
+    GFile *arquivo = gtk_file_chooser_get_file(GTK_FILE_CHOOSER(dialog));
+    char *caminho = arquivo ? g_file_get_path(arquivo) : NULL;
+    Aplicacao *app = aplicacao_padrao();
+    if (!caminho || !app) {
+      interface_mensagem(t->e, "Não foi possível exportar a agenda.", TRUE);
+    } else {
+      char *destino = caminho_com_extensao(caminho, ".ics");
+      Filtro f;
+      filtro_renderizado(t, &f);
+
+      Reserva *lista = g_new0(Reserva, g_n_reservas > 0 ? g_n_reservas : 1);
+      size_t quantidade = 0;
+      for (int i = 0; i < g_n_reservas; i++) {
+        const ReservaVista *rv = &g_reservas[i];
+        if (f.tipo[0] && strcmp(rv->tipo, f.tipo) != 0)
+          continue;
+        if (f.sala[0] && strcmp(rv->sala, f.sala) != 0)
+          continue;
+        Reserva *r = aplicacao_buscar_reserva(app, rv->idReserva);
+        if (r)
+          lista[quantidade++] = *r;
+      }
+
+      if (exportarAgendaICS(destino, lista, quantidade, app->salas,
+                            app->quantidadeSalas)) {
+        char *mensagem =
+            g_strdup_printf("Agenda exportada com %lu reservas: %s",
+                            (unsigned long)quantidade, destino);
+        interface_mensagem(t->e, mensagem, FALSE);
+        g_free(mensagem);
+      } else {
+        char *mensagem =
+            g_strdup_printf("Não foi possível exportar a agenda: %s", destino);
+        interface_mensagem(t->e, mensagem, TRUE);
+        g_free(mensagem);
+      }
+      g_free(lista);
+      g_free(destino);
+    }
+    g_free(caminho);
+    if (arquivo)
+      g_object_unref(arquivo);
+  }
+
+  gtk_native_dialog_destroy(GTK_NATIVE_DIALOG(dialog));
+  g_object_unref(dialog);
+}
+
+static void ao_agenda(GtkButton *b, gpointer dados) {
+  (void)b;
+  TelaVisao *t = dados;
+  Filtro f;
+  filtro_renderizado(t, &f);
+  acao_log("exportar_ics tipo:%s sala:%s", f.tipo[0] ? f.tipo : "(todas)",
+           f.sala[0] ? f.sala : "(todas)");
+  if (t->popover)
+    gtk_popover_popdown(GTK_POPOVER(t->popover));
+
+  char nome[96];
+  if (f.sala[0])
+    g_snprintf(nome, sizeof nome, "agenda-%s.ics", f.sala);
+  else
+    g_strlcpy(nome, "agenda-salas.ics", sizeof nome);
+
+  GtkFileChooserNative *seletor = gtk_file_chooser_native_new(
+      "Exportar agenda", (t->e && t->e->janela) ? GTK_WINDOW(t->e->janela) : NULL,
+      GTK_FILE_CHOOSER_ACTION_SAVE, "Salvar", "Cancelar");
+  gtk_file_chooser_set_current_name(GTK_FILE_CHOOSER(seletor), nome);
+  GtkFileFilter *filtro = gtk_file_filter_new();
+  gtk_file_filter_set_name(filtro, "Agenda (.ics)");
+  gtk_file_filter_add_pattern(filtro, "*.ics");
+  gtk_file_chooser_add_filter(GTK_FILE_CHOOSER(seletor), filtro);
+  g_object_unref(filtro);
+  g_signal_connect(seletor, "response", G_CALLBACK(ao_salvar_agenda), t);
+  gtk_native_dialog_show(GTK_NATIVE_DIALOG(seletor));
+}
 typedef struct {
   TelaVisao *t;
   char *caminho;
@@ -960,10 +1045,13 @@ GtkWidget *tela_visao_criar(Estado *e) {
   gtk_widget_set_margin_end(op, 6);
   GtkWidget *op_pdf = gtk_button_new_with_label("Exportar PDF");
   GtkWidget *op_csv = gtk_button_new_with_label("Exportar CSV");
+  GtkWidget *op_ics = gtk_button_new_with_label("Exportar agenda (.ics)");
   g_signal_connect(op_pdf, "clicked", G_CALLBACK(ao_pdf), t);
   g_signal_connect(op_csv, "clicked", G_CALLBACK(ao_csv), t);
+  g_signal_connect(op_ics, "clicked", G_CALLBACK(ao_agenda), t);
   gtk_box_append(GTK_BOX(op), op_pdf);
   gtk_box_append(GTK_BOX(op), op_csv);
+  gtk_box_append(GTK_BOX(op), op_ics);
   gtk_popover_set_child(GTK_POPOVER(t->popover), op);
   gtk_menu_button_set_popover(GTK_MENU_BUTTON(menu), t->popover);
 
