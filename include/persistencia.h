@@ -67,6 +67,16 @@ PersStatus pers_salvar_reservas(const char *caminho, const Reserva *reservas, si
 PersStatus pers_carregar_reservas(const char *caminho, Reserva **reservas, size_t *n,
                                   PersRelatorio *rel);
 
+// ---- Dias cancelados ----
+// Uma linha por dia cancelado: id_reserva;data;motivo
+// Nao pode repetir a mesma reserva no mesmo dia.
+
+PersStatus pers_salvar_cancelamentos(const char *caminho, const Cancelamento *v,
+                                     size_t n);
+
+PersStatus pers_carregar_cancelamentos(const char *caminho, Cancelamento **v,
+                                       size_t *n, PersRelatorio *rel);
+
 // ---- Outras ----
 
 // Libera o vetor devolvido pelas funcoes pers_carregar_*. Aceita NULL.

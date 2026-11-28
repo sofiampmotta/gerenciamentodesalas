@@ -43,6 +43,7 @@ extern SalaVista   *g_salas;
 extern int          g_n_salas;
 extern ReservaVista *g_reservas;
 extern int          g_n_reservas;
+extern int          g_versao_dados;
 
 void dados_iniciar(void);
 int  dados_data_hoje(void);
@@ -59,5 +60,12 @@ int  dados_atualizar_reserva(const ReservaVista *r, char *msg, size_t tam);
 /* Retornam 0 se excluiu e -1 se não (o motivo fica em msg). */
 int  dados_excluir_reserva(int id, char *msg, size_t tam);
 int  dados_excluir_sala(int id, char *msg, size_t tam);
+/* Dias cancelados de uma reserva semanal. dia no formato AAAAMMDD. */
+int  dados_dia_cancelado(int idReserva, int dia);
+int  dados_cancelar_dia(int idReserva, int dia, const char *motivo, char *msg,
+                        size_t tam);
+int  dados_desfazer_cancelamento(int idReserva, int dia, char *msg, size_t tam);
+int  dados_cancelamentos(int idReserva, int dias[], const char *motivos[],
+                         int max);
 void dados_recarregar(void);
 #endif

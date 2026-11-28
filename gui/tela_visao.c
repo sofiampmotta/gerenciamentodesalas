@@ -34,6 +34,7 @@ typedef struct {
   GtkWidget *btn_conf_toggle, *revealer_conf, *lista_conf;
   int ult_n_salas;
   int ult_n_reservas;
+  int ult_versao;
   int ult_dia;
   char ult_tipo[16];
   char ult_sala[64];
@@ -448,6 +449,7 @@ static void registrar_filtro_renderizado(TelaVisao *t) {
   ler_filtro(t, &f);
   t->ult_n_salas = g_n_salas;
   t->ult_n_reservas = g_n_reservas;
+  t->ult_versao = g_versao_dados;
   t->ult_dia = f.dia;
   g_strlcpy(t->ult_tipo, f.tipo, sizeof t->ult_tipo);
   g_strlcpy(t->ult_sala, f.sala, sizeof t->ult_sala);
@@ -521,7 +523,8 @@ static void ao_mostrar(GtkWidget *w, gpointer dados) {
   Filtro f;
   ler_filtro(t, &f);
   if (t->renderizado && t->ult_n_salas == g_n_salas &&
-      t->ult_n_reservas == g_n_reservas && t->ult_dia == f.dia &&
+      t->ult_n_reservas == g_n_reservas && t->ult_versao == g_versao_dados &&
+      t->ult_dia == f.dia &&
       strcmp(t->ult_tipo, f.tipo) == 0 && strcmp(t->ult_sala, f.sala) == 0)
     return;
   recarregar_salas(t);
@@ -704,7 +707,8 @@ static void ao_salvar_agenda(GtkNativeDialog *dialog, int resposta,
       }
 
       if (exportarAgendaICS(destino, lista, quantidade, app->salas,
-                            app->quantidadeSalas)) {
+                            app->quantidadeSalas, app->cancelamentos,
+                            app->quantidadeCancelamentos)) {
         char *mensagem =
             g_strdup_printf("Agenda exportada com %lu reservas: %s",
                             (unsigned long)quantidade, destino);

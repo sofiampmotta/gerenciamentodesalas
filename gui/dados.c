@@ -87,7 +87,11 @@ void dados_iniciar(void) {
     destino->fim = origem->horario.fim;
   }
 }
+// Muda a cada alteracao; as telas comparam para saber se precisam redesenhar
+int g_versao_dados = 0;
+
 void dados_recarregar(void) {
+  g_versao_dados++;
   g_free(g_salas);
   g_free(g_reservas);
 
@@ -145,7 +149,62 @@ int dados_reserva_ocorre_em(const ReservaVista *r, int dia) {
   if (!reserva)
     return 0;
 
-  return reservaOcorreEm(*reserva, data_de_codigo(dia));
+  Data data = data_de_codigo(dia);
+  return reservaOcorreEm(*reserva, data) &&
+         !aplicacao_dia_cancelado(app, reserva->id, data);
+}
+
+int dados_dia_cancelado(int idReserva, int dia) {
+  return aplicacao_dia_cancelado(aplicacao_padrao(), idReserva,
+                                 data_de_codigo(dia));
+}
+
+int dados_cancelar_dia(int idReserva, int dia, const char *motivo, char *msg,
+                       size_t tam) {
+  char data[16];
+  dados_data_texto(dia, data, sizeof data);
+  if (!aplicacao_cancelar_dia(aplicacao_padrao(), idReserva,
+                              data_de_codigo(dia), motivo)) {
+    g_snprintf(msg, tam, "Não foi possível cancelar o dia %s.", data);
+    return -1;
+  }
+  g_versao_dados++;
+  g_snprintf(msg, tam, "Dia %s cancelado. A sala fica livre nesse horário.",
+             data);
+  return 0;
+}
+
+int dados_desfazer_cancelamento(int idReserva, int dia, char *msg, size_t tam) {
+  char data[16];
+  dados_data_texto(dia, data, sizeof data);
+  if (!aplicacao_desfazer_cancelamento(aplicacao_padrao(), idReserva,
+                                       data_de_codigo(dia))) {
+    g_snprintf(msg, tam,
+               "Não deu para desfazer: a sala já tem outra reserva em %s "
+               "nesse horário.",
+               data);
+    return -1;
+  }
+  g_versao_dados++;
+  g_snprintf(msg, tam, "A aula do dia %s voltou para a agenda.", data);
+  return 0;
+}
+
+int dados_cancelamentos(int idReserva, int dias[], const char *motivos[],
+                        int max) {
+  Aplicacao *app = aplicacao_padrao();
+  int n = 0;
+  if (app == NULL)
+    return 0;
+  for (size_t i = 0; i < app->quantidadeCancelamentos && n < max; i++) {
+    const Cancelamento *c = &app->cancelamentos[i];
+    if (c->idReserva != idReserva)
+      continue;
+    dias[n] = codigo_de_data(c->data);
+    motivos[n] = c->motivo;
+    n++;
+  }
+  return n;
 }
 
 static Atividade atividade_backend(const char *tipo) {

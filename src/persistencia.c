@@ -32,6 +32,7 @@
 #define CAB_SALAS_LEGADO "#POLI-SALAS;SALAS;v1"
 #define CAB_RESERVAS "#POLI-SALAS;RESERVAS;v3"
 #define CAB_RESERVAS_LEGADO "#POLI-SALAS;RESERVAS;v2"
+#define CAB_CANCELAMENTOS "#POLI-SALAS;CANCELAMENTOS;v1"
 #define SEPARADOR ';'
 #define LINHA_MAX 1024
 // id;nome;capacidade;acessivel;projetor;televisao;computadores;local
@@ -39,6 +40,8 @@
 // id;id_sala;atividade;recorrente;data_inicio;fim_recorrencia;dia;inicio;fim;descricao;responsavel
 #define CAMPOS_RESERVA 11
 #define CAMPOS_RESERVA_V2 10
+// id_reserva;data;motivo
+#define CAMPOS_CANCELAMENTO 3
 #define CAMPOS_MAX 16
 #define MINUTOS_MAX 1439 // 23:59
 #define DATA_REFERENCIA_LEGADA 20261113
@@ -168,6 +171,18 @@ static int salas_duplicadas(const void *x, const void *y) {
 static int reservas_duplicadas(const void *x, const void *y) {
   const Reserva *a = x, *b = y;
   return a->id == b->id;
+}
+
+static int cancelamento_valido(const Cancelamento *c) {
+  return c->idReserva > 0 && !data_vazia(&c->data) && data_valida(&c->data) &&
+         texto_valido(c->motivo, sizeof c->motivo, 1);
+}
+
+// A mesma reserva nao pode ser cancelada duas vezes no mesmo dia
+static int cancelamentos_duplicados(const void *x, const void *y) {
+  const Cancelamento *a = x, *b = y;
+  return a->idReserva == b->idReserva && a->data.dia == b->data.dia &&
+         a->data.mes == b->data.mes && a->data.ano == b->data.ano;
 }
 
 // ---- Leitura de uma linha ----
@@ -375,7 +390,18 @@ static int ler_reserva(char **c, int n, void *destino) {
   return reserva_valida(r);
 }
 
-// ---- Carregar (serve para salas e reservas) ----
+static int ler_cancelamento(char **c, int n, void *destino) {
+  Cancelamento *x = destino;
+  if (n != CAMPOS_CANCELAMENTO)
+    return 0;
+  memset(x, 0, sizeof *x);
+  return ler_inteiro(c[0], 1, INT_MAX, &x->idReserva) &&
+         ler_data(c[1], &x->data) &&
+         copiar_texto(x->motivo, sizeof x->motivo, c[2]) &&
+         cancelamento_valido(x);
+}
+
+// ---- Carregar (serve para salas, reservas e cancelamentos) ----
 
 typedef int (*LerRegistroFn)(char **campos, int n, void *destino);
 typedef int (*DuplicadoFn)(const void *a, const void *b);
@@ -531,6 +557,12 @@ static int escrever_reserva(FILE *f, const void *x) {
       r->horario.fim / 60, r->horario.fim % 60, r->descricao, r->responsavel);
 }
 
+static int escrever_cancelamento(FILE *f, const void *x) {
+  const Cancelamento *c = x;
+  return fprintf(f, "%d;%04d-%02d-%02d;%s\n", c->idReserva, c->data.ano,
+                 c->data.mes, c->data.dia, c->motivo);
+}
+
 // Obriga os dados a irem para o disco agora
 static int sincronizar_disco(FILE *f) {
 #ifdef _WIN32
@@ -646,6 +678,9 @@ static int vetor_valido(const void *dados, size_t n, size_t tam,
 
 static int sala_valida_v(const void *r) { return sala_valida(r); }
 static int reserva_valida_v(const void *r) { return reserva_valida(r); }
+static int cancelamento_valido_v(const void *r) {
+  return cancelamento_valido(r);
+}
 
 // ---- Funcoes do persistencia.h ----
 
@@ -676,6 +711,24 @@ PersStatus pers_carregar_reservas(const char *caminho, Reserva **v, size_t *n,
                                   PersRelatorio *rel) {
   return carregar(caminho, CAB_RESERVAS, CAB_RESERVAS_LEGADO, sizeof(Reserva),
                   ler_reserva, reservas_duplicadas, (void **)v, n, rel);
+}
+
+PersStatus pers_salvar_cancelamentos(const char *caminho, const Cancelamento *v,
+                                     size_t n) {
+  if (caminho == NULL || (v == NULL && n > 0))
+    return PERS_ERRO_PARAMETRO;
+  if (!vetor_valido(v, n, sizeof *v, cancelamento_valido_v,
+                    cancelamentos_duplicados))
+    return PERS_ERRO_DADO_INVALIDO;
+  return gravar(caminho, CAB_CANCELAMENTOS, v, n, sizeof *v,
+                escrever_cancelamento);
+}
+
+PersStatus pers_carregar_cancelamentos(const char *caminho, Cancelamento **v,
+                                       size_t *n, PersRelatorio *rel) {
+  return carregar(caminho, CAB_CANCELAMENTOS, NULL, sizeof(Cancelamento),
+                  ler_cancelamento, cancelamentos_duplicados, (void **)v, n,
+                  rel);
 }
 
 void pers_liberar(void *vetor) { free(vetor); }

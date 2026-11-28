@@ -65,7 +65,8 @@ static const char *nome_da_sala(const Sala salas[], size_t quantidadeSalas,
 
 int exportarAgendaICS(const char *caminho, const Reserva reservas[],
                       size_t quantidade, const Sala salas[],
-                      size_t quantidadeSalas) {
+                      size_t quantidadeSalas, const Cancelamento cancelamentos[],
+                      size_t quantidadeCancelamentos) {
   if (caminho == NULL || (reservas == NULL && quantidade > 0))
     return 0;
 
@@ -118,6 +119,18 @@ int exportarAgendaICS(const char *caminho, const Reserva reservas[],
                "RRULE:FREQ=WEEKLY;UNTIL=%04d%02d%02dT235959", r->dataFim.ano,
                r->dataFim.mes, r->dataFim.dia);
       escrever_linha(f, linha);
+
+      // semanas canceladas: mesmo horario do DTSTART, so muda a data
+      for (size_t k = 0; cancelamentos != NULL && k < quantidadeCancelamentos;
+           k++) {
+        const Cancelamento *c = &cancelamentos[k];
+        if (c->idReserva != r->id)
+          continue;
+        snprintf(linha, sizeof linha, "EXDATE:%04d%02d%02dT%02d%02d00",
+                 c->data.ano, c->data.mes, c->data.dia, r->horario.comeco / 60,
+                 r->horario.comeco % 60);
+        escrever_linha(f, linha);
+      }
     }
 
     escapar_texto(texto, sizeof texto, r->descricao);

@@ -76,8 +76,13 @@ static void test_aula_e_evento(void) {
   strcpy(r[1].descricao, "Defesa de TCC; Banca A, B");
   strcpy(r[1].responsavel, "Coordenação");
 
+  /* a aula do dia 30/11 foi cancelada (feriado). O cancelamento do evento
+   * e ignorado, porque ele nao se repete. */
+  Cancelamento cancelados[2] = {{10, {30, 11, 2026}, "Feriado"},
+                                {11, {1, 12, 2026}, ""}};
+
   remove(ARQ);
-  CHECK(exportarAgendaICS(ARQ, r, 2, salas, 2) == 1);
+  CHECK(exportarAgendaICS(ARQ, r, 2, salas, 2, cancelados, 2) == 1);
 
   char *ics = ler_arquivo(ARQ);
   CHECK(ics != NULL);
@@ -99,6 +104,11 @@ static void test_aula_e_evento(void) {
   CHECK(strstr(ics, "DTSTART:20261201T140000\r\n") != NULL);
   CHECK(strstr(ics, "SUMMARY:Defesa de TCC\\; Banca A\\, B\r\n") != NULL);
   CHECK(strstr(ics, "LOCATION:Auditório\r\n") != NULL);
+
+  /* a semana cancelada sai da repeticao, no mesmo horario da aula */
+  char *exdate = strstr(ics, "EXDATE:20261130T071000\r\n");
+  CHECK(exdate != NULL);
+  CHECK(exdate == NULL || strstr(exdate + 1, "EXDATE") == NULL);
 
   /* so uma regra de repeticao (a da aula) */
   char *primeira = strstr(ics, "RRULE");
@@ -126,7 +136,7 @@ static void test_linha_longa(void) {
          "MICAELLA RAISSA FALCÃO DE MOURA, ANDREA BENICIO E VANESSA MARIA");
 
   remove(ARQ);
-  CHECK(exportarAgendaICS(ARQ, &r, 1, salas, 1) == 1);
+  CHECK(exportarAgendaICS(ARQ, &r, 1, salas, 1, NULL, 0) == 1);
   char *ics = ler_arquivo(ARQ);
   CHECK(ics != NULL);
   if (ics == NULL)
@@ -154,11 +164,11 @@ static void test_linha_longa(void) {
 }
 
 static void test_erros(void) {
-  CHECK(exportarAgendaICS(NULL, NULL, 0, NULL, 0) == 0);
+  CHECK(exportarAgendaICS(NULL, NULL, 0, NULL, 0, NULL, 0) == 0);
   CHECK(exportarAgendaICS("pasta_que_nao_existe/agenda.ics", NULL, 0, NULL,
-                          0) == 0);
+                          0, NULL, 0) == 0);
   /* lista vazia gera um calendario vazio, mas valido */
-  CHECK(exportarAgendaICS(ARQ, NULL, 0, NULL, 0) == 1);
+  CHECK(exportarAgendaICS(ARQ, NULL, 0, NULL, 0, NULL, 0) == 1);
   remove(ARQ);
 }
 

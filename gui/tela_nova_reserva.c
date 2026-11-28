@@ -26,7 +26,20 @@ typedef struct {
   int editando_id;
   GtkWidget *titulo_pag, *b_salvar_w;
   GtkWidget *sugestoes, *lista_sugestoes; // nomes ja usados em Responsavel
+  GtkWidget *caixa_cancelados, *resumo_cancelados; // so ao editar aula semanal
+  GtkWidget *rotulo_dia, *info_repeticao;
 } TelaNova;
+
+static const char *DIAS_SEMANA[] = {"domingo", "segunda", "terça", "quarta",
+                                    "quinta",  "sexta",   "sábado"};
+
+// "segunda", "terça"... a partir de uma data AAAAMMDD
+static const char *dia_da_semana(int dia) {
+  GDate *d = g_date_new_dmy(dia % 100, (dia / 100) % 100, dia / 10000);
+  int semana = g_date_get_weekday(d) % 7;
+  g_date_free(d);
+  return DIAS_SEMANA[semana];
+}
 
 static TelaNova *g_nova = NULL;
 
@@ -46,6 +59,8 @@ static void estilo_nova(void) {
            ".check-ok { color: #1e7e4a; }"
            ".check-erro { color: #c8102e; }"
            ".motivo { color: #5b6b8a; }"
+           ".caixa-cancelados { border: 1px solid #e1e6ef; border-radius: 6px; "
+           "padding: 10px 12px; }"
            "button.secundario { background: #ffffff; background-image: none; "
            "color: #12274f;"
            "  border: 1px solid #1f4e8c; border-radius: 4px; font-weight: "
@@ -126,6 +141,10 @@ static void atualizar(TelaNova *t) {
   VerificacaoReserva *v = &t->v;
   dados_verificar_reserva(&t->r, v);
 
+  // aula semanal: a data escolhida e so o comeco da repeticao
+  gtk_label_set_text(GTK_LABEL(t->rotulo_dia),
+                     t->r.isRecorrente ? "Começa em" : "Dia");
+
   gtk_label_set_text(GTK_LABEL(t->status), v->titulo);
   gtk_widget_remove_css_class(t->status, "status-ok");
   gtk_widget_remove_css_class(t->status, "status-erro");
@@ -148,7 +167,11 @@ static void atualizar(TelaNova *t) {
     } else {
       dados_data_texto(t->r.dia, dia, sizeof dia);
       dia[5] = '\0';
-      g_snprintf(txt, sizeof txt, "Dia %s na %s", dia, t->r.sala);
+      if (t->r.isRecorrente)
+        g_snprintf(txt, sizeof txt, "Toda %s na %s, a partir de %s",
+                   dia_da_semana(t->r.dia), t->r.sala, dia);
+      else
+        g_snprintf(txt, sizeof txt, "Dia %s na %s", dia, t->r.sala);
       definir_linha(t->l_dia, TRUE, txt);
       if (t->r.fim <= t->r.ini) {
         definir_linha(t->l_hor, FALSE, "Horário final antes do inicial");
@@ -249,6 +272,11 @@ static void recarregar_salas(TelaNova *t) {
 
 static void limpar(TelaNova *t) {
   t->editando_id = 0;
+  if (t->caixa_cancelados) { // reserva nova: volta a escolher a repeticao
+    gtk_widget_set_visible(t->caixa_cancelados, FALSE);
+    gtk_widget_set_visible(t->info_repeticao, FALSE);
+    gtk_widget_set_visible(t->repeticao, TRUE);
+  }
   t->montando = TRUE;
   gtk_widget_set_sensitive(t->data, TRUE);
   gtk_editable_set_text(GTK_EDITABLE(t->atividade), "");
@@ -269,6 +297,59 @@ static void ao_mudou(GObject *o, GParamSpec *p, gpointer dados) {
 }
 static void ao_data(gpointer dados) { atualizar((TelaNova *)dados); }
 
+/* ---- Dias cancelados (so aparece ao editar uma reserva semanal) ---- */
+
+static void atualizar_cancelados(TelaNova *t) {
+  int i = t->editando_id > 0 ? dados_indice_reserva(t->editando_id) : -1;
+  gboolean semanal = i >= 0 && g_reservas[i].isRecorrente;
+  gtk_widget_set_visible(t->caixa_cancelados, semanal);
+
+  // ao editar aula semanal, a repeticao nao muda: mostra como ela e
+  gtk_widget_set_visible(t->repeticao, !semanal);
+  gtk_widget_set_visible(t->info_repeticao, semanal);
+  if (!semanal)
+    return;
+
+  const ReservaVista *r = &g_reservas[i];
+  char ini[8], fim[8], ate[16];
+  dados_hora_texto(r->ini, ini, sizeof ini);
+  dados_hora_texto(r->fim, fim, sizeof fim);
+  dados_data_texto(r->fimRecorrencia, ate, sizeof ate);
+  char *repeticao = g_strdup_printf("Toda %s, das %s às %s, até %s",
+                                    dia_da_semana(r->dia), ini, fim, ate);
+  gtk_label_set_text(GTK_LABEL(t->info_repeticao), repeticao);
+  g_free(repeticao);
+
+  int dias[12];
+  const char *motivos[12];
+  int n = dados_cancelamentos(t->editando_id, dias, motivos, 12);
+  GString *texto = g_string_new(NULL);
+  if (n == 0)
+    g_string_append(texto, "Nenhuma. Use para feriado, falta do professor ou "
+                           "prova em outra sala.");
+  for (int k = 0; k < n; k++) {
+    g_string_append_printf(texto, "%s%02d/%02d", k ? ", " : "", dias[k] % 100,
+                           (dias[k] / 100) % 100);
+    if (motivos[k][0])
+      g_string_append_printf(texto, " (%s)", motivos[k]);
+  }
+  gtk_label_set_text(GTK_LABEL(t->resumo_cancelados), texto->str);
+  g_string_free(texto, TRUE);
+}
+
+static void ao_fechar_cancelar_dia(GtkWidget *janela, gpointer dados) {
+  (void)janela;
+  atualizar_cancelados((TelaNova *)dados);
+}
+
+static void ao_cancelar_dia(GtkButton *b, gpointer dados) {
+  (void)b;
+  TelaNova *t = (TelaNova *)dados;
+  GtkWidget *janela = cancelar_dia_abrir(t->e, t->editando_id);
+  if (janela)
+    g_signal_connect(janela, "destroy", G_CALLBACK(ao_fechar_cancelar_dia), t);
+}
+
 static void ao_mostrar(GtkWidget *w, gpointer dados) {
   TelaNova *t = (TelaNova *)dados;
   recarregar_salas(t);
@@ -283,6 +364,7 @@ static void ao_mostrar(GtkWidget *w, gpointer dados) {
                                                       ? "Salvar alterações"
                                                       : "Salvar reserva");
   gtk_widget_set_sensitive(t->repeticao, t->editando_id == 0);
+  atualizar_cancelados(t);
   atualizar(t);
 }
 
@@ -506,12 +588,20 @@ GtkWidget *tela_nova_reserva_criar(Estado *e) {
   gtk_grid_attach(GTK_GRID(grade), rotulo("Sala"), 1, 4, 1, 1);
   gtk_grid_attach(GTK_GRID(grade), t->tipo, 0, 5, 1, 1);
   gtk_grid_attach(GTK_GRID(grade), t->sala, 1, 5, 1, 1);
-  gtk_grid_attach(GTK_GRID(grade), rotulo("Dia"), 0, 6, 1, 1);
+  t->rotulo_dia = rotulo("Dia");
+  gtk_grid_attach(GTK_GRID(grade), t->rotulo_dia, 0, 6, 1, 1);
   gtk_grid_attach(GTK_GRID(grade), rotulo("Horário"), 1, 6, 1, 1);
   gtk_grid_attach(GTK_GRID(grade), data, 0, 7, 1, 1);
   gtk_grid_attach(GTK_GRID(grade), horas, 1, 7, 1, 1);
   gtk_grid_attach(GTK_GRID(grade), rotulo("Repetição"), 0, 8, 2, 1);
-  gtk_grid_attach(GTK_GRID(grade), t->repeticao, 0, 9, 2, 1);
+  t->info_repeticao = gtk_label_new("");
+  gtk_label_set_xalign(GTK_LABEL(t->info_repeticao), 0);
+  gtk_widget_add_css_class(t->info_repeticao, "texto-destaque");
+  gtk_widget_set_visible(t->info_repeticao, FALSE);
+  GtkWidget *repeticao = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+  gtk_box_append(GTK_BOX(repeticao), t->repeticao);
+  gtk_box_append(GTK_BOX(repeticao), t->info_repeticao);
+  gtk_grid_attach(GTK_GRID(grade), repeticao, 0, 9, 2, 1);
 
   GtkWidget *botoes = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
   gtk_widget_set_margin_top(botoes, 14);
@@ -524,7 +614,31 @@ GtkWidget *tela_nova_reserva_criar(Estado *e) {
   g_signal_connect(b_desc, "clicked", G_CALLBACK(ao_descartar), t);
   gtk_box_append(GTK_BOX(botoes), b_salvar);
   gtk_box_append(GTK_BOX(botoes), b_desc);
-  gtk_grid_attach(GTK_GRID(grade), botoes, 0, 10, 2, 1);
+
+  // feriado, falta do professor: tira so uma semana, sem mexer nas outras
+  t->caixa_cancelados = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
+  gtk_widget_set_margin_top(t->caixa_cancelados, 6);
+  gtk_widget_add_css_class(t->caixa_cancelados, "caixa-cancelados");
+  GtkWidget *linha_cancelados = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 12);
+  t->resumo_cancelados = gtk_label_new("");
+  gtk_widget_add_css_class(t->resumo_cancelados, "motivo");
+  gtk_label_set_xalign(GTK_LABEL(t->resumo_cancelados), 0);
+  gtk_label_set_wrap(GTK_LABEL(t->resumo_cancelados), TRUE);
+  gtk_widget_set_hexpand(t->resumo_cancelados, TRUE);
+  GtkWidget *b_cancelar_dia = gtk_button_new_with_label("Cancelar um dia");
+  gtk_widget_add_css_class(b_cancelar_dia, "secundario");
+  gtk_widget_set_tooltip_text(b_cancelar_dia,
+                              "Feriado, falta do professor ou prova em outra "
+                              "sala: tira só uma semana");
+  g_signal_connect(b_cancelar_dia, "clicked", G_CALLBACK(ao_cancelar_dia), t);
+  gtk_box_append(GTK_BOX(linha_cancelados), t->resumo_cancelados);
+  gtk_box_append(GTK_BOX(linha_cancelados), b_cancelar_dia);
+  gtk_box_append(GTK_BOX(t->caixa_cancelados), rotulo("Semanas sem aula"));
+  gtk_box_append(GTK_BOX(t->caixa_cancelados), linha_cancelados);
+  gtk_widget_set_visible(t->caixa_cancelados, FALSE);
+  gtk_grid_attach(GTK_GRID(grade), t->caixa_cancelados, 0, 10, 2, 1);
+
+  gtk_grid_attach(GTK_GRID(grade), botoes, 0, 11, 2, 1);
   gtk_box_append(GTK_BOX(corpo), grade);
 
   /* painel de verificação (lado direito, como no protótipo) */
@@ -636,5 +750,6 @@ void nova_reserva_editar(int id) {
 
   t->editando_id = id;
   t->montando = FALSE;
+  atualizar_cancelados(t);
   atualizar(t);
 }

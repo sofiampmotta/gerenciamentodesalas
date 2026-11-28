@@ -885,6 +885,98 @@ static void test_historico(void) {
   remove("perfil.txt");
 }
 
+/* Cancelar um dia de uma aula semanal libera a sala so naquele dia. */
+static void test_cancelar_um_dia(void) {
+  Aplicacao app;
+  limpar(ARQ_SAL);
+  limpar(ARQ_RES);
+  remove("cancelamentos.csv");
+  remove("historico.csv");
+
+  memset(&app, 0, sizeof app);
+  if (!aplicacao_iniciar(&app, ARQ_SAL, ARQ_RES)) {
+    CHECK(0);
+    return;
+  }
+  Sala i03 = sala(0, "I-03");
+  CHECK(aplicacao_salvar_sala(&app, &i03));
+  /* toda segunda, 07:30-09:10, de 16/11 a 31/12/2026 */
+  CHECK(aplicacao_salvar_reserva(&app, aula(0, i03.id, SEG, H(7, 30), H(9, 10))));
+  int id = app.reservas[0].id;
+
+  Data seg30 = {30, 11, 2026}, ter01 = {1, 12, 2026}, seg07 = {7, 12, 2026};
+  Data depois = {4, 1, 2027};
+
+  CHECK(aplicacao_cancelar_dia(&app, id, seg30, "Feriado"));
+  CHECK(aplicacao_dia_cancelado(&app, id, seg30));
+  CHECK(!aplicacao_dia_cancelado(&app, id, seg07));
+  CHECK(!aplicacao_cancelar_dia(&app, id, seg30, "")); /* ja cancelado */
+  CHECK(!aplicacao_cancelar_dia(&app, id, ter01, "")); /* nao e segunda */
+  CHECK(!aplicacao_cancelar_dia(&app, id, depois, "")); /* depois do fim */
+
+  /* prova no dia 30/11 no mesmo horario: agora pode */
+  Reserva prova = aula(0, i03.id, SEG, H(8, 0), H(9, 0));
+  prova.isRecorrente = false;
+  prova.data = seg30;
+  prova.dataFim = (Data){0, 0, 0};
+  CHECK(aplicacao_buscar_conflito_reserva(&app, &prova, 0, NULL) == 0);
+  CHECK(aplicacao_salvar_reserva(&app, prova));
+  int idProva = app.reservas[1].id;
+
+  /* no dia 07/12 a aula continua, entao da conflito */
+  prova.data = seg07;
+  CHECK(aplicacao_buscar_conflito_reserva(&app, &prova, 0, NULL) == 1);
+
+  /* com a prova marcada, nao da para desfazer o cancelamento do dia 30 */
+  CHECK(!aplicacao_desfazer_cancelamento(&app, id, seg30));
+  CHECK(aplicacao_excluir_reserva(&app, idProva));
+  aplicacao_finalizar(&app);
+
+  /* o cancelamento continua gravado quando o sistema abre de novo */
+  memset(&app, 0, sizeof app);
+  CHECK(aplicacao_iniciar(&app, ARQ_SAL, ARQ_RES));
+  CHECK(app.quantidadeCancelamentos == 1);
+  CHECK(aplicacao_dia_cancelado(&app, id, seg30));
+  if (app.quantidadeCancelamentos == 1)
+    CHECK(strcmp(app.cancelamentos[0].motivo, "Feriado") == 0);
+
+  /* sem a prova, desfazer funciona */
+  CHECK(aplicacao_desfazer_cancelamento(&app, id, seg30));
+  CHECK(!aplicacao_dia_cancelado(&app, id, seg30));
+  CHECK(!aplicacao_desfazer_cancelamento(&app, id, seg30));
+
+  /* excluindo a reserva, os dias cancelados dela somem junto */
+  CHECK(aplicacao_cancelar_dia(&app, id, seg07, ""));
+  CHECK(aplicacao_excluir_reserva(&app, id));
+  CHECK(app.quantidadeCancelamentos == 0);
+  aplicacao_finalizar(&app);
+
+  /* arquivo com linha estragada: so ela e pulada */
+  FILE *f = fopen("cancelamentos.csv", "w");
+  if (f != NULL) {
+    fputs("#POLI-SALAS;CANCELAMENTOS;v1\n5;2026-11-30;Feriado\n"
+          "x;2026-11-30;\n5;2026-02-30;\n5;2026-11-30;Repetido\n", f);
+    fclose(f);
+  }
+  Cancelamento *lidos = NULL;
+  size_t n = 0;
+  PersRelatorio rel;
+  CHECK(pers_carregar_cancelamentos("cancelamentos.csv", &lidos, &n, &rel) ==
+        PERS_OK);
+  CHECK(n == 1 && rel.linhas_invalidas == 3);
+  pers_liberar(lidos);
+
+  /* motivo com ';' nao e gravado */
+  Cancelamento ruim = {5, {30, 11, 2026}, "a;b"};
+  CHECK(pers_salvar_cancelamentos("cancelamentos.csv", &ruim, 1) ==
+        PERS_ERRO_DADO_INVALIDO);
+
+  limpar(ARQ_SAL);
+  limpar(ARQ_RES);
+  limpar("cancelamentos.csv");
+  remove("historico.csv");
+}
+
 int main(void) {
   printf("Testes do modulo de persistencia\n");
   RODAR(test_salas_ida_e_volta);
@@ -900,6 +992,7 @@ int main(void) {
   RODAR(test_nome_de_sala_parecido);
   RODAR(test_excluir);
   RODAR(test_historico);
+  RODAR(test_cancelar_um_dia);
   RODAR(test_crlf_e_bom);
   RODAR(test_salvar_dado_invalido_nao_altera_arquivo);
   RODAR(test_gravacao_segura_backup);

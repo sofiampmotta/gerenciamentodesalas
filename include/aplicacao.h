@@ -9,9 +9,12 @@ typedef struct {
     size_t quantidadeSalas;
     Reserva *reservas;
     size_t quantidadeReservas;
+    Cancelamento *cancelamentos; /* dias em que uma aula semanal nao acontece */
+    size_t quantidadeCancelamentos;
     char caminhoSalas[512];
     char caminhoReservas[512];
     char caminhoHistorico[512];
+    char caminhoCancelamentos[512];
     char caminhoPerfil[512];
     char usuario[64]; /* quem esta usando, vai para o historico */
     char setor[32];
@@ -44,6 +47,14 @@ int aplicacao_excluir_reserva(Aplicacao *app, int id);
 int aplicacao_buscar_conflito_reserva(const Aplicacao *app,
                                       const Reserva *proposta, int ignorarId,
                                       Reserva *conflitante);
+
+/* Cancela um dia de uma reserva semanal; as outras semanas continuam.
+ * Recusa se a reserva nao for semanal, se ela nao acontece nesse dia ou se o
+ * dia ja estiver cancelado. */
+int aplicacao_cancelar_dia(Aplicacao *app, int idReserva, Data data,
+                           const char *motivo);
+int aplicacao_desfazer_cancelamento(Aplicacao *app, int idReserva, Data data);
+int aplicacao_dia_cancelado(const Aplicacao *app, int idReserva, Data data);
 
 Sala *aplicacao_buscar_sala(Aplicacao *app, int id);
 // Procura uma sala pelo nome, sem diferenciar maiusculas, hifen, ponto e

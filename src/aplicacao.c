@@ -205,6 +205,8 @@ int aplicacao_iniciar(Aplicacao *app, const char *caminhoSalas,
   definirCaminho(app->caminhoReservas, caminhoReservas, PERS_ARQ_RESERVAS);
   caminho_ao_lado(app->caminhoHistorico, app->caminhoSalas, "historico.csv");
   caminho_ao_lado(app->caminhoPerfil, app->caminhoSalas, "perfil.txt");
+  caminho_ao_lado(app->caminhoCancelamentos, app->caminhoSalas,
+                  "cancelamentos.csv");
   carregar_perfil(app);
 
   PersRelatorio relatorioSalas;
@@ -239,6 +241,14 @@ int aplicacao_iniciar(Aplicacao *app, const char *caminhoSalas,
     return 0;
   }
 
+  // se esse arquivo estiver com problema, o sistema abre sem os cancelamentos
+  status = pers_carregar_cancelamentos(app->caminhoCancelamentos,
+                                       &app->cancelamentos,
+                                       &app->quantidadeCancelamentos, NULL);
+  if (status != PERS_OK)
+    fprintf(stderr, "Aviso: %s: %s\n", app->caminhoCancelamentos,
+            pers_mensagem(status));
+
   if (caminhoReservas == NULL && relatorioReservas.arquivo_ausente) {
     Reserva *reservasExemplo = NULL;
     size_t quantidadeReservasExemplo = 0;
@@ -270,6 +280,7 @@ void aplicacao_finalizar(Aplicacao *app) {
     return;
   pers_liberar(app->salas);
   pers_liberar(app->reservas);
+  pers_liberar(app->cancelamentos);
   memset(app, 0, sizeof *app);
 }
 
@@ -304,6 +315,10 @@ int aplicacao_buscar_conflito_reserva(const Aplicacao *app,
   for (size_t i = 0; i < app->quantidadeReservas; i++) {
     const Reserva *existente = &app->reservas[i];
     if (existente->id == ignorarId)
+      continue;
+    // reserva de um dia so, num dia em que a aula semanal foi cancelada
+    if (!normalizada.isRecorrente && existente->isRecorrente &&
+        aplicacao_dia_cancelado(app, existente->id, normalizada.data))
       continue;
     if (reservasConflitam(normalizada, *existente)) {
       if (conflitante != NULL)
@@ -627,5 +642,111 @@ int aplicacao_excluir_reserva(Aplicacao *app, int id) {
   char detalhe[200];
   descrever_reserva(app, &removida, detalhe, sizeof detalhe);
   registrar(app, "Excluiu reserva", detalhe);
+
+  // os dias cancelados dessa reserva nao servem mais
+  size_t mantidos = 0;
+  for (size_t i = 0; i < app->quantidadeCancelamentos; i++)
+    if (app->cancelamentos[i].idReserva != removida.id)
+      app->cancelamentos[mantidos++] = app->cancelamentos[i];
+  if (mantidos != app->quantidadeCancelamentos) {
+    app->quantidadeCancelamentos = mantidos;
+    pers_salvar_cancelamentos(app->caminhoCancelamentos, app->cancelamentos,
+                              mantidos);
+  }
+  return 1;
+}
+
+/* ---- Cancelar um dia de uma reserva semanal ---- */
+
+static int mesma_data(Data a, Data b) {
+  return a.dia == b.dia && a.mes == b.mes && a.ano == b.ano;
+}
+
+static int indice_cancelamento(const Aplicacao *app, int idReserva, Data data) {
+  for (size_t i = 0; i < app->quantidadeCancelamentos; i++)
+    if (app->cancelamentos[i].idReserva == idReserva &&
+        mesma_data(app->cancelamentos[i].data, data))
+      return (int)i;
+  return -1;
+}
+
+int aplicacao_dia_cancelado(const Aplicacao *app, int idReserva, Data data) {
+  return app != NULL && indice_cancelamento(app, idReserva, data) >= 0;
+}
+
+int aplicacao_cancelar_dia(Aplicacao *app, int idReserva, Data data,
+                           const char *motivo) {
+  if (app == NULL)
+    return 0;
+  Reserva *reserva = aplicacao_buscar_reserva(app, idReserva);
+  if (reserva == NULL || !reserva->isRecorrente ||
+      !reservaOcorreEm(*reserva, data) ||
+      aplicacao_dia_cancelado(app, idReserva, data))
+    return 0;
+
+  Cancelamento novo;
+  memset(&novo, 0, sizeof novo);
+  novo.idReserva = idReserva;
+  novo.data = data;
+  snprintf(novo.motivo, sizeof novo.motivo, "%s", motivo != NULL ? motivo : "");
+
+  Cancelamento *maior = realloc(app->cancelamentos,
+                                (app->quantidadeCancelamentos + 1) * sizeof *maior);
+  if (maior == NULL)
+    return 0;
+  app->cancelamentos = maior;
+  app->cancelamentos[app->quantidadeCancelamentos] = novo;
+
+  if (pers_salvar_cancelamentos(app->caminhoCancelamentos, app->cancelamentos,
+                                app->quantidadeCancelamentos + 1) != PERS_OK)
+    return 0; // nao conta o novo, a lista fica como estava
+  app->quantidadeCancelamentos++;
+
+  char detalhe[200];
+  snprintf(detalhe, sizeof detalhe, "%s, sala %s, %02d/%02d/%04d%s%s",
+           reserva->descricao, nome_sala(app, reserva->idSala), data.dia,
+           data.mes, data.ano, novo.motivo[0] ? " - " : "", novo.motivo);
+  registrar(app, "Cancelou um dia", detalhe);
+  return 1;
+}
+
+int aplicacao_desfazer_cancelamento(Aplicacao *app, int idReserva, Data data) {
+  if (app == NULL)
+    return 0;
+  int i = indice_cancelamento(app, idReserva, data);
+  if (i < 0)
+    return 0;
+
+  // se a sala ja foi usada por outra reserva nesse dia, nao da para voltar
+  Reserva *reserva = aplicacao_buscar_reserva(app, idReserva);
+  if (reserva != NULL) {
+    Reserva naqueleDia = *reserva;
+    naqueleDia.isRecorrente = false;
+    naqueleDia.data = data;
+    naqueleDia.dataFim = (Data){0, 0, 0};
+    if (aplicacao_buscar_conflito_reserva(app, &naqueleDia, idReserva, NULL) ==
+        1)
+      return 0;
+  }
+
+  Cancelamento removido = app->cancelamentos[i];
+  size_t n = app->quantidadeCancelamentos;
+  memmove(&app->cancelamentos[i], &app->cancelamentos[i + 1],
+          (n - (size_t)i - 1) * sizeof *app->cancelamentos);
+  if (pers_salvar_cancelamentos(app->caminhoCancelamentos, app->cancelamentos,
+                                n - 1) != PERS_OK) {
+    // volta como estava
+    memmove(&app->cancelamentos[i + 1], &app->cancelamentos[i],
+            (n - (size_t)i - 1) * sizeof *app->cancelamentos);
+    app->cancelamentos[i] = removido;
+    return 0;
+  }
+  app->quantidadeCancelamentos--;
+
+  char detalhe[200];
+  snprintf(detalhe, sizeof detalhe, "%s, %02d/%02d/%04d volta a acontecer",
+           reserva != NULL ? reserva->descricao : "Reserva", data.dia, data.mes,
+           data.ano);
+  registrar(app, "Desfez cancelamento", detalhe);
   return 1;
 }
