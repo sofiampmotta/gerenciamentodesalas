@@ -10,6 +10,21 @@
 #define MAX_LINE 2048
 #include "../include/alocacao.h"
 
+#ifdef _WIN32
+#include <windows.h>
+/* No Windows o caminho vem do GTK em UTF-8, mas o popen comum nao entende
+ * acentos (ex.: "TURMA - HORÁRIO 2026.2.pdf"). Por isso o comando e
+ * convertido para UTF-16 e aberto com _wpopen. */
+static FILE *abrir_comando(const char *cmd) {
+  wchar_t wcmd[MAX_LINE + 64];
+  if (MultiByteToWideChar(CP_UTF8, 0, cmd, -1, wcmd, MAX_LINE + 64) == 0)
+    return NULL;
+  return _wpopen(wcmd, L"r");
+}
+#else
+static FILE *abrir_comando(const char *cmd) { return popen(cmd, "r"); }
+#endif
+
 typedef enum {
   STATE_WAIT_TURMA,
   STATE_READ_TURMA,
@@ -192,9 +207,16 @@ static FILE *open_document(const char *path, bool *is_pipe) {
   char escaped[MAX_LINE];
   size_t j = 0;
   for (size_t i = 0; path[i] != '\0' && j + 2 < sizeof(escaped); i++) {
+#ifdef _WIN32
+    // no Windows a barra \ faz parte do caminho e aspas nao existem em
+    // nome de arquivo, entao nada precisa ser escapado
+    if (path[i] == '"')
+      continue;
+#else
     if (path[i] == '"' || path[i] == '\\' || path[i] == '$' || path[i] == '`') {
       escaped[j++] = '\\';
     }
+#endif
     escaped[j++] = path[i];
   }
   escaped[j] = '\0';
@@ -203,7 +225,7 @@ static FILE *open_document(const char *path, bool *is_pipe) {
   snprintf(cmd, sizeof(cmd), "pdftotext -raw \"%s\" -", escaped);
 
   *is_pipe = true;
-  return popen(cmd, "r");
+  return abrir_comando(cmd);
 }
 static int horario_para_minutos(int hora, int minuto) {
   return hora * 60 + minuto;

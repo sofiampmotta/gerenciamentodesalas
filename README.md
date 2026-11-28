@@ -38,7 +38,32 @@ Os requisitos, as funcionalidades e a arquitetura estão sendo definidos a parti
 
 ## Como executar
 
-As instruções de compilação e execução serão adicionadas após a definição da estrutura final do projeto.
+### Linux
+
+```
+sudo apt install build-essential libgtk-4-dev poppler-utils
+make
+./bin/programa
+```
+
+### Windows (MSYS2)
+
+Abra o terminal **MSYS2 UCRT64** e instale o compilador, o GTK4 e o Poppler
+(o Poppler traz o `pdftotext`, usado para importar o PDF de turmas):
+
+```
+pacman -S mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-gtk4 mingw-w64-ucrt-x86_64-poppler make
+```
+
+Depois, na pasta do projeto:
+
+```
+make
+./bin/programa.exe
+```
+
+Para conferir se o importador de PDF vai funcionar, rode `pdftotext -v`.
+Se aparecer "command not found", o Poppler não está instalado.
 
 ## Licença
 
