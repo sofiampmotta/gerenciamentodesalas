@@ -21,16 +21,9 @@ static void estilo_historico(void) {
   carregado = TRUE;
 
   GtkCssProvider *css = gtk_css_provider_new();
+  // as cores das etiquetas ficam em visual.c e visual_escuro.c
   gtk_css_provider_load_from_string(
-      css, ".dia-historico { padding: 14px 16px 6px 16px; }"
-           ".dia-historico label { color: #5b6b8a; font-weight: bold; "
-           "font-size: 12px; }"
-           ".acao { font-size: 12px; font-weight: bold; padding: 2px 8px; "
-           "border-radius: 10px; }"
-           ".acao-criou { background: #e7f5ec; color: #1e7e4a; }"
-           ".acao-editou { background: #e8eef8; color: #1f4e8c; }"
-           ".acao-excluiu { background: #fdecec; color: #9f1d24; }"
-           ".acao-importou { background: #f3eefc; color: #5b3fa0; }");
+      css, ".dia-historico { padding: 14px 16px 6px 16px; }");
   gtk_style_context_add_provider_for_display(
       gdk_display_get_default(), GTK_STYLE_PROVIDER(css),
       GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);

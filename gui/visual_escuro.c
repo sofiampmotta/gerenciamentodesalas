@@ -1,3 +1,7 @@
+#define BALAO(x)                                                               \
+  "window button.menu popover.balao " x                                        \
+  ", window menubutton.perfil popover.balao " x " "
+
 /* Paleta noturna institucional (POLI-UPE): grafite-marinho + bordô + popovers
  * integrados */
 const char *CSS_VISUAL_ESCURO =
@@ -98,4 +102,30 @@ const char *CSS_VISUAL_ESCURO =
     "#e2e8f0; }"
     "popover calendar > grid > label:selected { background: #b91c1c; color: "
     "#ffffff; border-radius: 6px; }"
-    "popover listview row:hover { background: #1e2c44; }";
+    "popover listview row:hover { background: #1e2c44; }"
+
+    /* Nome do usuario no canto do menu: sem fundo de botao */
+    "window menubutton.perfil > button { background: transparent; "
+    "border-color: transparent; box-shadow: none; }"
+    "window menubutton.perfil > button:hover { background: rgba(255, 255, "
+    "255, 0.07); }"
+
+    /* Balao do tutorial (fundo escuro no modo noturno) */
+    BALAO("label") "{ color: #e2e8f0; }"
+    BALAO("label.tutorial-contador") "{ color: #94a3b8; }"
+    BALAO("label.tutorial-titulo") "{ color: #f8fafc; }"
+    BALAO("label.tutorial-ponto") "{ color: #475569; }"
+    BALAO("label.tutorial-ponto.tutorial-ponto-atual") "{ color: #f87171; }"
+    BALAO("button.secundario label") "{ color: #e2e8f0; }"
+    "window button.tutorial-pular label { color: #94a3b8; }"
+
+    /* Etiquetas da tela Historico */
+    "window .tab-reservas row label.acao-criou { background: rgba(34, 197, "
+    "94, 0.15); color: #86efac; }"
+    "window .tab-reservas row label.acao-editou { background: rgba(59, 130, "
+    "246, 0.18); color: #93c5fd; }"
+    "window .tab-reservas row label.acao-excluiu { background: rgba(239, 68, "
+    "68, 0.18); color: #fca5a5; }"
+    "window .tab-reservas row label.acao-importou { background: rgba(168, 85, "
+    "247, 0.18); color: #d8b4fe; }"
+    "window .tab-reservas row.dia-historico label { color: #94a3b8; }";

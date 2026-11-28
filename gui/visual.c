@@ -1,5 +1,11 @@
 #include "interface.h"
 
+/* Seletor do balao do tutorial: preso a um item do menu ou ao nome do
+ * usuario. Ex.: BALAO("label") vira as duas regras separadas por virgula. */
+#define BALAO(x)                                                               \
+  "window button.menu popover.balao " x                                        \
+  ", window menubutton.perfil popover.balao " x " "
+
 static void registrar_provedor_css(const char *css_texto, guint prioridade) {
   GtkCssProvider *provider = gtk_css_provider_new();
   gtk_css_provider_load_from_string(provider, css_texto);
@@ -33,10 +39,8 @@ static const char *CSS_ESTRUTURA_BASE =
     "window .perfil-box { margin: 14px 16px 18px 16px; padding: 10px 12px; "
     "border-radius: 10px; }"
     "window .avatar-perfil { border-radius: 99px; padding: 9px; }"
-    "window menubutton.perfil > button { background: transparent; border: "
-    "none; box-shadow: none; padding: 8px 10px; border-radius: 8px; }"
-    "window menubutton.perfil > button:hover { background: rgba(255, 255, "
-    "255, 0.07); }"
+    "window menubutton.perfil > button { padding: 8px 10px; border-radius: "
+    "8px; }"
     "window .usuario-nome { font-weight: 700; font-size: 15px; }"
     "window .usuario-info { font-size: 13.5px; font-weight: 500; }"
     "window .titulo, window .titulo-form { font-family: 'Segoe UI', 'Inter', "
@@ -195,7 +199,43 @@ static const char *CSS_PALETA_CLARA =
     "#10b981; color: #065f46; }"
     "window .barra-status.error { background: #fef2f2; border-color: #ef4444; "
     "color: #991b1b; }"
-    "window .status-ponto { color: #16a34a; }";
+    "window .status-ponto { color: #16a34a; }"
+
+    /* Nome do usuario no canto do menu: sem fundo de botao */
+    "window menubutton.perfil > button { background: transparent; "
+    "border-color: transparent; box-shadow: none; }"
+    "window menubutton.perfil > button:hover { background: rgba(255, 255, "
+    "255, 0.07); }"
+
+    /* Balao do tutorial. Ele fica preso a um item do menu lateral, entao
+     * precisa vencer as cores claras do menu. */
+    BALAO("label") "{ color: #1f2937; font-size: 14px; font-weight: 400; }"
+    BALAO("label.tutorial-contador")
+    "{ color: #5b6b8a; font-size: 12px; font-weight: 700; }"
+    BALAO("label.tutorial-titulo")
+    "{ color: #0f172a; font-size: 17px; font-weight: 800; }"
+    BALAO("label.tutorial-ponto") "{ color: #d1d5db; font-size: 9px; }"
+    BALAO("label.tutorial-ponto.tutorial-ponto-atual") "{ color: #9f1d24; }"
+    BALAO("button.primario label") "{ color: #ffffff; font-weight: 700; }"
+    BALAO("button.secundario label") "{ color: #12274f; font-weight: 700; }"
+    "window button.tutorial-pular { background: none; border: none; "
+    "box-shadow: none; padding: 4px 0; }"
+    "window button.tutorial-pular label { color: #5b6b8a; font-weight: 400; "
+    "text-decoration: underline; }"
+
+    /* Etiquetas da tela Historico */
+    "window .tab-reservas row label.acao { font-size: 12px; font-weight: 700; "
+    "padding: 2px 8px; border-radius: 10px; }"
+    "window .tab-reservas row label.acao-criou { background: #e7f5ec; color: "
+    "#1e7e4a; }"
+    "window .tab-reservas row label.acao-editou { background: #e8eef8; color: "
+    "#1f4e8c; }"
+    "window .tab-reservas row label.acao-excluiu { background: #fdecec; "
+    "color: #9f1d24; }"
+    "window .tab-reservas row label.acao-importou { background: #f3eefc; "
+    "color: #5b3fa0; }"
+    "window .tab-reservas row.dia-historico label { color: #5b6b8a; "
+    "font-size: 12px; font-weight: 700; }";
 
 void visual_aplicar(void) {
   registrar_provedor_css(CSS_ESTRUTURA_BASE, GTK_STYLE_PROVIDER_PRIORITY_USER);

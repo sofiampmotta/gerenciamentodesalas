@@ -52,28 +52,6 @@ typedef struct {
 
 static Tutorial *g_tutorial = NULL;
 
-static void estilo_tutorial(void) {
-  static gboolean carregado = FALSE;
-  if (carregado)
-    return;
-  carregado = TRUE;
-  GtkCssProvider *css = gtk_css_provider_new();
-  gtk_css_provider_load_from_string(
-      css, ".tutorial-contador { font-size: 12px; font-weight: bold; "
-           "color: #5b6b8a; }"
-           ".tutorial-titulo { font-size: 17px; font-weight: 800; }"
-           ".tutorial-ponto { font-size: 9px; color: #d1d5db; }"
-           ".tutorial-ponto-atual { color: #9f1d24; }"
-           "button.tutorial-pular { background: none; border: none; "
-           "box-shadow: none; padding: 4px 0; }"
-           "button.tutorial-pular label { color: #5b6b8a; "
-           "text-decoration: underline; font-weight: normal; }");
-  gtk_style_context_add_provider_for_display(
-      gdk_display_get_default(), GTK_STYLE_PROVIDER(css),
-      GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
-  g_object_unref(css);
-}
-
 // Lista de quem ja viu o tutorial, um nome por linha (pasta de perfil.txt)
 static void caminho_marca(char destino[512]) {
   Aplicacao *app = aplicacao_padrao();
@@ -199,7 +177,6 @@ static void ao_pular(GtkButton *b, gpointer dados) {
 static Tutorial *criar_tutorial(Estado *e) {
   Tutorial *t = g_new0(Tutorial, 1);
   t->e = e;
-  estilo_tutorial();
 
   GtkWidget *caixa = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
   gtk_widget_set_margin_top(caixa, 10);
@@ -250,6 +227,7 @@ static Tutorial *criar_tutorial(Estado *e) {
   gtk_box_append(GTK_BOX(caixa), rodape);
 
   t->balao = gtk_popover_new();
+  gtk_widget_add_css_class(t->balao, "balao"); // cores em visual.c
   g_object_ref_sink(t->balao); // continua vivo ao trocar de item do menu
   gtk_popover_set_child(GTK_POPOVER(t->balao), caixa);
   gtk_popover_set_position(GTK_POPOVER(t->balao), GTK_POS_RIGHT);
@@ -270,7 +248,6 @@ static gboolean iniciar_depois(gpointer dados) {
 }
 
 void tutorial_se_primeira_vez(Estado *e) {
-  estilo_tutorial(); // o link "Ver o tutorial" usa o mesmo estilo
   if (ja_viu(usuario_atual()))
     return;
   // espera a janela aparecer para o balao saber onde apontar
