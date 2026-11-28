@@ -207,6 +207,7 @@ int aplicacao_iniciar(Aplicacao *app, const char *caminhoSalas,
   caminho_ao_lado(app->caminhoPerfil, app->caminhoSalas, "perfil.txt");
   caminho_ao_lado(app->caminhoCancelamentos, app->caminhoSalas,
                   "cancelamentos.csv");
+  caminho_ao_lado(app->caminhoPendencias, app->caminhoSalas, "pendencias.csv");
   carregar_perfil(app);
 
   PersRelatorio relatorioSalas;
@@ -249,6 +250,12 @@ int aplicacao_iniciar(Aplicacao *app, const char *caminhoSalas,
     fprintf(stderr, "Aviso: %s: %s\n", app->caminhoCancelamentos,
             pers_mensagem(status));
 
+  status = pers_carregar_pendencias(app->caminhoPendencias, &app->pendencias,
+                                    &app->quantidadePendencias, NULL);
+  if (status != PERS_OK)
+    fprintf(stderr, "Aviso: %s: %s\n", app->caminhoPendencias,
+            pers_mensagem(status));
+
   if (caminhoReservas == NULL && relatorioReservas.arquivo_ausente) {
     Reserva *reservasExemplo = NULL;
     size_t quantidadeReservasExemplo = 0;
@@ -281,6 +288,7 @@ void aplicacao_finalizar(Aplicacao *app) {
   pers_liberar(app->salas);
   pers_liberar(app->reservas);
   pers_liberar(app->cancelamentos);
+  pers_liberar(app->pendencias);
   memset(app, 0, sizeof *app);
 }
 
@@ -748,5 +756,118 @@ int aplicacao_desfazer_cancelamento(Aplicacao *app, int idReserva, Data data) {
            reserva != NULL ? reserva->descricao : "Reserva", data.dia, data.mes,
            data.ano);
   registrar(app, "Desfez cancelamento", detalhe);
+  return 1;
+}
+
+/* ---- Pendencias da importacao do PDF ---- */
+
+// Mesma aula, no mesmo dia e horario, vinda da mesma sala do PDF
+static int mesma_pendencia(const Pendencia *a, const Pendencia *b) {
+  const Reserva *x = &a->reserva, *y = &b->reserva;
+  return strcmp(x->descricao, y->descricao) == 0 &&
+         x->horario.dia == y->horario.dia &&
+         x->horario.comeco == y->horario.comeco &&
+         x->horario.fim == y->horario.fim && mesma_data(x->data, y->data) &&
+         strcmp(a->salaPDF, b->salaPDF) == 0;
+}
+
+static int indice_pendencia(const Aplicacao *app, int id) {
+  for (size_t i = 0; i < app->quantidadePendencias; i++)
+    if (app->pendencias[i].id == id)
+      return (int)i;
+  return -1;
+}
+
+// Tira a pendencia da lista e grava. Se nao gravar, volta como estava.
+static int remover_pendencia(Aplicacao *app, int i) {
+  Pendencia removida = app->pendencias[i];
+  size_t n = app->quantidadePendencias;
+  memmove(&app->pendencias[i], &app->pendencias[i + 1],
+          (n - (size_t)i - 1) * sizeof *app->pendencias);
+  if (pers_salvar_pendencias(app->caminhoPendencias, app->pendencias, n - 1) !=
+      PERS_OK) {
+    memmove(&app->pendencias[i + 1], &app->pendencias[i],
+            (n - (size_t)i - 1) * sizeof *app->pendencias);
+    app->pendencias[i] = removida;
+    return 0;
+  }
+  app->quantidadePendencias--;
+  return 1;
+}
+
+int aplicacao_adicionar_pendencias(Aplicacao *app, Pendencia novas[],
+                                   size_t quantidade) {
+  if (app == NULL || (novas == NULL && quantidade > 0))
+    return -1;
+  if (quantidade == 0)
+    return 0;
+
+  Pendencia *lista = realloc(app->pendencias,
+                             (app->quantidadePendencias + quantidade) *
+                                 sizeof *lista);
+  if (lista == NULL)
+    return -1;
+  app->pendencias = lista;
+
+  int proximoId = 1;
+  for (size_t i = 0; i < app->quantidadePendencias; i++)
+    if (lista[i].id >= proximoId)
+      proximoId = lista[i].id + 1;
+
+  size_t total = app->quantidadePendencias;
+  for (size_t k = 0; k < quantidade; k++) {
+    int repetida = 0;
+    for (size_t i = 0; i < total && !repetida; i++)
+      repetida = mesma_pendencia(&lista[i], &novas[k]);
+    if (repetida)
+      continue;
+    lista[total] = novas[k];
+    lista[total].id = proximoId++;
+    total++;
+  }
+
+  size_t adicionadas = total - app->quantidadePendencias;
+  if (adicionadas == 0)
+    return 0;
+  if (pers_salvar_pendencias(app->caminhoPendencias, lista, total) != PERS_OK)
+    return -1; // as novas ficam fora da contagem, a lista continua a antiga
+  app->quantidadePendencias = total;
+  return (int)adicionadas;
+}
+
+int aplicacao_resolver_pendencia(Aplicacao *app, int id, int idSala) {
+  if (app == NULL || aplicacao_buscar_sala(app, idSala) == NULL)
+    return 0;
+  int i = indice_pendencia(app, id);
+  if (i < 0)
+    return 0;
+
+  Reserva nova = app->pendencias[i].reserva;
+  nova.id = 0;
+  nova.idSala = idSala;
+  // salvar_reserva nao confere conflito (as telas conferem antes); aqui
+  // a pendencia nao pode virar uma reserva em choque com outra
+  if (aplicacao_buscar_conflito_reserva(app, &nova, 0, NULL) != 0)
+    return 0;
+  if (!aplicacao_salvar_reserva(app, nova)) // ja registra no historico
+    return 0;
+  if (!remover_pendencia(app, i))
+    fprintf(stderr, "Aviso: a reserva foi criada, mas a pendencia %d "
+                    "continua na lista\n", id);
+  return 1;
+}
+
+int aplicacao_descartar_pendencia(Aplicacao *app, int id) {
+  if (app == NULL)
+    return 0;
+  int i = indice_pendencia(app, id);
+  if (i < 0)
+    return 0;
+  char detalhe[200];
+  snprintf(detalhe, sizeof detalhe, "%s (veio do PDF)",
+           app->pendencias[i].reserva.descricao);
+  if (!remover_pendencia(app, i))
+    return 0;
+  registrar(app, "Descartou pendência", detalhe);
   return 1;
 }

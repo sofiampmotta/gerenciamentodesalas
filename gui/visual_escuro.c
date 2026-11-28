@@ -128,4 +128,10 @@ const char *CSS_VISUAL_ESCURO =
     "68, 0.18); color: #fca5a5; }"
     "window .tab-reservas row label.acao-importou { background: rgba(168, 85, "
     "247, 0.18); color: #d8b4fe; }"
-    "window .tab-reservas row.dia-historico label { color: #94a3b8; }";
+    "window .tab-reservas row.dia-historico label { color: #94a3b8; }"
+
+    /* Pendencias da importacao */
+    "window button.botao-pendencias { border-color: #b45309; }"
+    "window button.botao-pendencias label { color: #fcd34d; }"
+    "window label.pendencia-conflito { color: #fca5a5; }"
+    "window label.pendencia-sala { color: #fcd34d; }";

@@ -32,6 +32,9 @@ static void limpar(void) {
   remove(ARQ_RES);
   remove(ARQ_RES ".bak");
   remove(ARQ_TXT);
+  remove("pendencias.csv");
+  remove("pendencias.csv.bak");
+  remove("historico.csv");
 }
 
 static void escrever_texto(const char *caminho, const char *texto) {
@@ -261,10 +264,73 @@ static void test_relatorio_civil(void) {
   limpar();
 }
 
+/* O que nao entra vai para as Pendencias, sem repetir ao importar de novo,
+ * e pode ser resolvido (escolhendo a sala) ou descartado. */
+static void test_pendencias(void) {
+  Aplicacao app;
+  ResumoImportacao res;
+  Data inicio = {16, 11, 2026}, fim = {5, 3, 2027};
+
+  if (!iniciar_com_salas(&app)) {
+    CHECK(0);
+    return;
+  }
+  escrever_texto(ARQ_TXT, RELATORIO);
+  CHECK(importarPDF(&app, ARQ_TXT, inicio, fim, &res) == LEITOR_OK);
+  CHECK(res.pendentes == 2); /* CM sem sala (X-99) e QM em conflito */
+  CHECK(app.quantidadePendencias == 2);
+
+  int idSemSala = 0, idConflito = 0;
+  for (size_t i = 0; i < app.quantidadePendencias; i++) {
+    const Pendencia *p = &app.pendencias[i];
+    if (p->motivo == PEND_SEM_SALA) {
+      idSemSala = p->id;
+      CHECK(strcmp(p->salaPDF, "X-99") == 0);
+    } else if (p->motivo == PEND_CONFLITO) {
+      idConflito = p->id;
+      CHECK(strncmp(p->detalhe, "I-03 já tem", strlen("I-03 já tem")) == 0);
+    }
+  }
+  CHECK(idSemSala > 0 && idConflito > 0);
+
+  /* importar de novo nao repete as pendencias */
+  CHECK(importarPDF(&app, ARQ_TXT, inicio, fim, &res) == LEITOR_OK);
+  CHECK(res.pendentes == 0 && app.quantidadePendencias == 2);
+
+  /* resolver: a aula sem sala vai para a I-05, que esta livre na terca */
+  size_t antes = app.quantidadeReservas;
+  Sala *i05 = NULL;
+  for (size_t i = 0; i < app.quantidadeSalas; i++)
+    if (strcmp(app.salas[i].nome, "I-05") == 0)
+      i05 = &app.salas[i];
+  CHECK(i05 != NULL);
+  if (i05 != NULL)
+    CHECK(aplicacao_resolver_pendencia(&app, idSemSala, i05->id));
+  CHECK(app.quantidadeReservas == antes + 1);
+  CHECK(app.quantidadePendencias == 1);
+
+  /* resolver na I-03 da conflito de novo: recusa e a pendencia fica */
+  CHECK(!aplicacao_resolver_pendencia(&app, idConflito, app.salas[0].id));
+  CHECK(app.quantidadePendencias == 1);
+
+  CHECK(aplicacao_descartar_pendencia(&app, idConflito));
+  CHECK(app.quantidadePendencias == 0);
+  aplicacao_finalizar(&app);
+
+  /* ficou gravado: abrindo de novo, nao ha pendencias */
+  memset(&app, 0, sizeof app);
+  CHECK(aplicacao_iniciar(&app, ARQ_SAL, ARQ_RES));
+  CHECK(app.quantidadePendencias == 0);
+  aplicacao_finalizar(&app);
+  limpar();
+}
+
 int main(void) {
   printf("Testes do leitor de PDF:\n");
   printf("- test_importacao_parcial\n");
   test_importacao_parcial();
+  printf("- test_pendencias\n");
+  test_pendencias();
   printf("- test_relatorio_civil\n");
   test_relatorio_civil();
   printf("- test_formato_desconhecido\n");

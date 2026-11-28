@@ -977,6 +977,47 @@ static void test_cancelar_um_dia(void) {
   remove("historico.csv");
 }
 
+/* Arquivo de pendencias: grava, le de volta e recusa dado estragado. */
+static void test_arquivo_pendencias(void) {
+  Pendencia p[2];
+  memset(p, 0, sizeof p);
+  p[0].id = 1;
+  p[0].motivo = PEND_SEM_SALA;
+  p[0].reserva = aula(0, 0, SEG, H(18, 50), H(20, 30));
+  strcpy(p[0].reserva.descricao, "DESENHO TECNICO - SN");
+  strcpy(p[0].salaPDF, "G03-LIP 7");
+  p[1] = p[0];
+  p[1].id = 2;
+  p[1].motivo = PEND_CONFLITO;
+  p[1].reserva.idSala = 3;
+  strcpy(p[1].detalhe, "I-03 já tem CÁLCULO 1 - TC");
+
+  remove("pendencias_teste.csv");
+  CHECK(pers_salvar_pendencias("pendencias_teste.csv", p, 2) == PERS_OK);
+
+  Pendencia *lidas = NULL;
+  size_t n = 0;
+  CHECK(pers_carregar_pendencias("pendencias_teste.csv", &lidas, &n, NULL) ==
+        PERS_OK);
+  CHECK(n == 2);
+  if (n == 2) {
+    CHECK(lidas[0].motivo == PEND_SEM_SALA && lidas[0].reserva.idSala == 0);
+    CHECK(strcmp(lidas[0].salaPDF, "G03-LIP 7") == 0);
+    CHECK(lidas[0].reserva.horario.comeco == H(18, 50));
+    CHECK(lidas[1].motivo == PEND_CONFLITO && lidas[1].reserva.idSala == 3);
+    CHECK(strcmp(lidas[1].detalhe, "I-03 já tem CÁLCULO 1 - TC") == 0);
+  }
+  pers_liberar(lidas);
+
+  /* ';' no nome da sala estragaria o arquivo: nada e gravado */
+  strcpy(p[0].salaPDF, "G03;LIP");
+  CHECK(pers_salvar_pendencias("pendencias_teste.csv", p, 2) ==
+        PERS_ERRO_DADO_INVALIDO);
+
+  remove("pendencias_teste.csv");
+  remove("pendencias_teste.csv.bak");
+}
+
 int main(void) {
   printf("Testes do modulo de persistencia\n");
   RODAR(test_salas_ida_e_volta);
@@ -993,6 +1034,7 @@ int main(void) {
   RODAR(test_excluir);
   RODAR(test_historico);
   RODAR(test_cancelar_um_dia);
+  RODAR(test_arquivo_pendencias);
   RODAR(test_crlf_e_bom);
   RODAR(test_salvar_dado_invalido_nao_altera_arquivo);
   RODAR(test_gravacao_segura_backup);

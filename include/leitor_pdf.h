@@ -32,6 +32,7 @@ typedef struct
   size_t duplicadas; // ja existiam iguais no sistema
   size_t conflitos;  // batiam com outra reserva na mesma sala e horario
   size_t semSala;    // sala nao cadastrada, dia ou horario invalido
+  size_t pendentes;  // das que ficaram de fora, quantas foram para Pendencias
 } ResumoImportacao;
 
 // Respostas de lerPDF e importarPDF
@@ -42,7 +43,8 @@ typedef struct
 
 // Converte as turmas em reservas recorrentes. Horarios com sala nao
 // cadastrada ou dia/horario invalido sao pulados e contados em 'ignorados'
-// (pode ser NULL).
+// (pode ser NULL). Os que tem dia e horario certos, mas nao tem sala, vao
+// para 'pendencias' (pode ser NULL), para alguem escolher a sala depois.
 int converter_turmas_reservas(const Aplicacao *app,
                               const TurmaPDF *turmas,
                               size_t quantidadeTurmas,
@@ -50,13 +52,15 @@ int converter_turmas_reservas(const Aplicacao *app,
                               Data dataFim,
                               Reserva **resultado,
                               size_t *quantidadeReservas,
-                              size_t *ignorados);
+                              size_t *ignorados,
+                              Pendencia **pendencias,
+                              size_t *quantidadePendencias);
 int lerPDF(const char *caminho,
            TurmaPDF **turmas,
            size_t *quantidade);
 
 // Importa o relatorio Turma/Horario. As reservas que dao certo sao salvas;
-// as com conflito ou sala desconhecida sao puladas e contadas no resumo.
+// as com conflito ou sala desconhecida ficam nas Pendencias do sistema.
 int importarPDF(Aplicacao *app,
                 const char *caminho,
                 Data inicio,

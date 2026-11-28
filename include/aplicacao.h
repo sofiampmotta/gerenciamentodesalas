@@ -11,10 +11,13 @@ typedef struct {
     size_t quantidadeReservas;
     Cancelamento *cancelamentos; /* dias em que uma aula semanal nao acontece */
     size_t quantidadeCancelamentos;
+    Pendencia *pendencias; /* aulas do PDF que nao entraram */
+    size_t quantidadePendencias;
     char caminhoSalas[512];
     char caminhoReservas[512];
     char caminhoHistorico[512];
     char caminhoCancelamentos[512];
+    char caminhoPendencias[512];
     char caminhoPerfil[512];
     char usuario[64]; /* quem esta usando, vai para o historico */
     char setor[32];
@@ -55,6 +58,15 @@ int aplicacao_cancelar_dia(Aplicacao *app, int idReserva, Data data,
                            const char *motivo);
 int aplicacao_desfazer_cancelamento(Aplicacao *app, int idReserva, Data data);
 int aplicacao_dia_cancelado(const Aplicacao *app, int idReserva, Data data);
+
+/* Pendencias da importacao do PDF. Adicionar ignora as que ja estao na
+ * lista (mesma aula, dia e horario) e devolve quantas entraram, ou -1 se
+ * nao conseguiu gravar. Resolver cria a reserva na sala escolhida e tira a
+ * pendencia da lista. */
+int aplicacao_adicionar_pendencias(Aplicacao *app, Pendencia novas[],
+                                   size_t quantidade);
+int aplicacao_resolver_pendencia(Aplicacao *app, int id, int idSala);
+int aplicacao_descartar_pendencia(Aplicacao *app, int id);
 
 Sala *aplicacao_buscar_sala(Aplicacao *app, int id);
 // Procura uma sala pelo nome, sem diferenciar maiusculas, hifen, ponto e

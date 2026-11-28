@@ -32,6 +32,7 @@ typedef struct {
   GtkWidget *titulo_dia, *quadro, *ocupacao;
   GtkWidget *r_uso, *r_ocup, *r_conf, *r_salas;
   GtkWidget *btn_conf_toggle, *revealer_conf, *lista_conf;
+  GtkWidget *b_pendencias; // so aparece quando ha pendencias da importacao
   int ult_n_salas;
   int ult_n_reservas;
   int ult_versao;
@@ -517,9 +518,37 @@ static void recarregar_salas(TelaVisao *t) {
   gtk_drop_down_set_selected(GTK_DROP_DOWN(t->sala), pos);
 }
 
+// "Pendências (12)" ao lado de Importar PDF; some quando nao ha nenhuma
+static void atualizar_pendencias(TelaVisao *t) {
+  Aplicacao *app = aplicacao_padrao();
+  size_t n = app ? app->quantidadePendencias : 0;
+  gtk_widget_set_visible(t->b_pendencias, n > 0);
+  if (n > 0) {
+    char *texto = g_strdup_printf("Pendências (%lu)", (unsigned long)n);
+    gtk_button_set_label(GTK_BUTTON(t->b_pendencias), texto);
+    g_free(texto);
+  }
+}
+
+static void ao_fechar_pendencias(GtkWidget *janela, gpointer dados) {
+  (void)janela;
+  TelaVisao *t = (TelaVisao *)dados;
+  atualizar_pendencias(t);
+  t->renderizado = FALSE; // pode ter entrado reserva nova
+  atualizar(t);
+}
+
+static void ao_pendencias(GtkButton *b, gpointer dados) {
+  (void)b;
+  TelaVisao *t = (TelaVisao *)dados;
+  GtkWidget *janela = pendencias_abrir(t->e);
+  g_signal_connect(janela, "destroy", G_CALLBACK(ao_fechar_pendencias), t);
+}
+
 static void ao_mostrar(GtkWidget *w, gpointer dados) {
   (void)w;
   TelaVisao *t = (TelaVisao *)dados;
+  atualizar_pendencias(t);
   Filtro f;
   ler_filtro(t, &f);
   if (t->renderizado && t->ult_n_salas == g_n_salas &&
@@ -818,6 +847,10 @@ static void ao_confirmar_importacao(GtkDialog *dialog, int resposta,
                                  (unsigned long)resumo.semSala);
         g_string_append(msg, ".");
       }
+      if (resumo.pendentes > 0)
+        g_string_append_printf(msg, " %lu foram para Pendências.",
+                                (unsigned long)resumo.pendentes);
+      atualizar_pendencias(imp->t);
 
       interface_mensagem(imp->t->e, msg->str, FALSE);
       g_string_free(msg, TRUE);
@@ -1069,7 +1102,18 @@ GtkWidget *tela_visao_criar(Estado *e) {
   gtk_widget_set_valign(btn_importar_pdf, GTK_ALIGN_START);
   g_signal_connect(btn_importar_pdf, "clicked", G_CALLBACK(ao_importar_pdf), t);
 
+  t->b_pendencias = gtk_button_new_with_label("Pendências");
+  gtk_widget_add_css_class(t->b_pendencias, "secundario");
+  gtk_widget_add_css_class(t->b_pendencias, "botao-pendencias");
+  gtk_widget_set_valign(t->b_pendencias, GTK_ALIGN_START);
+  gtk_widget_set_tooltip_text(t->b_pendencias,
+                              "Aulas do PDF que não entraram e esperam uma "
+                              "sala");
+  g_signal_connect(t->b_pendencias, "clicked", G_CALLBACK(ao_pendencias), t);
+
   gtk_box_append(GTK_BOX(topo), textos);
+  gtk_box_append(GTK_BOX(topo), t->b_pendencias);
+  atualizar_pendencias(t);
   gtk_box_append(GTK_BOX(topo), menu);
   gtk_box_append(GTK_BOX(topo), btn_importar_pdf);
   gtk_box_append(GTK_BOX(pagina), topo);

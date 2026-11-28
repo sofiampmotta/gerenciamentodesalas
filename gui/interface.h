@@ -47,6 +47,8 @@ void tutorial_iniciar(Estado *e);
 void tutorial_se_primeira_vez(Estado *e);
 /* Abre a janela "Cancelar um dia". Devolve a janela (ou NULL). */
 GtkWidget *cancelar_dia_abrir(Estado *e, int idReserva);
+/* Abre a janela "Pendências da importação" e devolve a janela. */
+GtkWidget *pendencias_abrir(Estado *e);
 void acao_log(const char *fmt, ...) G_GNUC_PRINTF(1, 2);
 const char *acao_hora(int min);
 int  dados_dia_hoje(void);

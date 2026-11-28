@@ -620,10 +620,23 @@ int lerPDF(const char *caminho, TurmaPDF **resultado, size_t *quantidade) {
   return 1;
 }
 
+// Aula que nao achou sala: vira pendencia com o nome que veio no PDF
+static void guardar_pendencia(Pendencia *lista, size_t *n, Reserva aula,
+                              const char *salaPDF) {
+  Pendencia *p = &lista[(*n)++];
+  memset(p, 0, sizeof *p);
+  p->motivo = salaPDF[0] != '\0' ? PEND_SEM_SALA : PEND_SALA_VAZIA;
+  aula.idSala = 0;
+  p->reserva = aula;
+  copiar_sem_cortar(p->salaPDF, salaPDF, sizeof p->salaPDF);
+}
+
 int converter_turmas_reservas(const Aplicacao *app, const TurmaPDF *turmas,
                               size_t quantidadeTurmas, Data dataInicio,
                               Data dataFim, Reserva **resultado,
-                              size_t *quantidadeReservas, size_t *ignorados) {
+                              size_t *quantidadeReservas, size_t *ignorados,
+                              Pendencia **pendencias,
+                              size_t *quantidadePendencias) {
   if (!app || !turmas || !resultado || !quantidadeReservas)
     return 0;
 
@@ -631,6 +644,10 @@ int converter_turmas_reservas(const Aplicacao *app, const TurmaPDF *turmas,
   *quantidadeReservas = 0;
   if (ignorados)
     *ignorados = 0;
+  if (pendencias)
+    *pendencias = NULL;
+  if (quantidadePendencias)
+    *quantidadePendencias = 0;
 
   size_t total = 0;
 
@@ -645,11 +662,15 @@ int converter_turmas_reservas(const Aplicacao *app, const TurmaPDF *turmas,
     return 0;
 
   Reserva *reservas = calloc(total, sizeof(Reserva));
+  Pendencia *semSala = calloc(total, sizeof(Pendencia));
 
-  if (reservas == NULL)
+  if (reservas == NULL || semSala == NULL) {
+    free(reservas);
+    free(semSala);
     return 0;
+  }
 
-  size_t count = 0;
+  size_t count = 0, countSemSala = 0;
 
   for (size_t i = 0; i < quantidadeTurmas; i++) {
     const TurmaPDF *t = &turmas[i];
@@ -658,17 +679,18 @@ int converter_turmas_reservas(const Aplicacao *app, const TurmaPDF *turmas,
       const HorarioPDF *h = &t->horarios[j];
 
       Dia dia;
-      int idSala;
+      int idSala = 0;
 
-      // Sala nao cadastrada ou dia invalido: pula so este horario
-      if (!converter_dia(h->dia, &dia) ||
-          !buscar_id_sala(app, h->sala, &idSala)) {
-        fprintf(stderr, "Ignorado (dia ou sala invalida): %s | %s | %s\n",
-                t->componente, h->dia, h->sala);
+      // Dia invalido: pula so este horario
+      if (!converter_dia(h->dia, &dia)) {
+        fprintf(stderr, "Ignorado (dia invalido): %s | %s\n", t->componente,
+                h->dia);
         if (ignorados)
           (*ignorados)++;
         continue;
       }
+      // Sala nao cadastrada (ou sem sala no PDF): a aula vira pendencia
+      bool temSala = buscar_id_sala(app, h->sala, &idSala);
 
       // Primeiro confere todos os intervalos; se algum estiver errado,
       // pula o horario inteiro
@@ -701,16 +723,33 @@ int converter_turmas_reservas(const Aplicacao *app, const TurmaPDF *turmas,
         if (inicio == fimBloco) {
           fimBloco = fim;
         } else {
-          reservas[count++] = criar_reserva(t, idSala, dia, inicioBloco,
-                                            fimBloco, dataInicio, dataFim);
+          Reserva aula = criar_reserva(t, idSala, dia, inicioBloco, fimBloco,
+                                       dataInicio, dataFim);
+          if (temSala)
+            reservas[count++] = aula;
+          else
+            guardar_pendencia(semSala, &countSemSala, aula, h->sala);
           inicioBloco = inicio;
           fimBloco = fim;
         }
       }
 
-      reservas[count++] = criar_reserva(t, idSala, dia, inicioBloco, fimBloco,
-                                        dataInicio, dataFim);
+      Reserva aula = criar_reserva(t, idSala, dia, inicioBloco, fimBloco,
+                                   dataInicio, dataFim);
+      if (temSala)
+        reservas[count++] = aula;
+      else
+        guardar_pendencia(semSala, &countSemSala, aula, h->sala);
     }
+  }
+
+  if (ignorados)
+    *ignorados += countSemSala;
+  if (pendencias && quantidadePendencias) {
+    *pendencias = semSala;
+    *quantidadePendencias = countSemSala;
+  } else {
+    free(semSala);
   }
 
   *resultado = reservas;
@@ -741,6 +780,8 @@ int importarPDF(Aplicacao *app, const char *caminho, Data inicio, Data fim,
 
   Reserva *reservas = NULL;
   size_t quantidadeReservas = 0;
+  Pendencia *pendencias = NULL;
+  size_t quantidadePendencias = 0;
 
   int lido = lerPDF(caminho, &turmas, &quantidadeTurmas);
   if (lido != LEITOR_OK)
@@ -748,19 +789,31 @@ int importarPDF(Aplicacao *app, const char *caminho, Data inicio, Data fim,
 
   int sucesso = converter_turmas_reservas(app, turmas, quantidadeTurmas, inicio,
                                           fim, &reservas, &quantidadeReservas,
-                                          &resumo->semSala);
+                                          &resumo->semSala, &pendencias,
+                                          &quantidadePendencias);
 
   free(turmas);
 
   if (!sucesso)
     return LEITOR_ERRO;
 
+  // os conflitos tambem viram pendencia; cabe uma por reserva lida
+  Pendencia *todas = realloc(pendencias, (quantidadePendencias +
+                                          quantidadeReservas + 1) *
+                                             sizeof *todas);
+  if (todas == NULL) {
+    free(pendencias);
+    free(reservas);
+    return LEITOR_ERRO;
+  }
+  pendencias = todas;
+
   size_t validas = 0;
 
   for (size_t i = 0; i < quantidadeReservas; i++) {
     Reserva nova = reservas[i];
     bool duplicada = false;
-    bool conflito = false;
+    const Reserva *conflito = NULL; // com quem bateu
 
     // Compara com reservas existentes
     for (size_t j = 0; j < app->quantidadeReservas; j++) {
@@ -769,7 +822,7 @@ int importarPDF(Aplicacao *app, const char *caminho, Data inicio, Data fim,
       if (reservas_iguais(nova, existente))
         duplicada = true;
       else if (reservasConflitam(nova, existente))
-        conflito = true;
+        conflito = &app->reservas[j];
     }
 
     // Compara com outras reservas do mesmo PDF que ja entraram
@@ -777,7 +830,7 @@ int importarPDF(Aplicacao *app, const char *caminho, Data inicio, Data fim,
       if (reservas_iguais(nova, reservas[j]))
         duplicada = true;
       else if (reservasConflitam(nova, reservas[j]))
-        conflito = true;
+        conflito = &reservas[j];
     }
 
     if (duplicada) {
@@ -785,10 +838,16 @@ int importarPDF(Aplicacao *app, const char *caminho, Data inicio, Data fim,
       continue;
     }
 
-    // Conflito: pula so esta reserva e continua com as outras
+    // Conflito: pula so esta reserva, guarda como pendencia e continua
     if (conflito) {
-      fprintf(stderr, "Ignorado (conflito): %s | Sala ID: %d\n",
-              nova.descricao, nova.idSala);
+      Pendencia *p = &pendencias[quantidadePendencias++];
+      Sala *sala = aplicacao_buscar_sala(app, nova.idSala);
+      memset(p, 0, sizeof *p);
+      p->motivo = PEND_CONFLITO;
+      p->reserva = nova;
+      copiar_sem_cortar(p->salaPDF, sala ? sala->nome : "", sizeof p->salaPDF);
+      snprintf(p->detalhe, sizeof p->detalhe, "%s já tem %s",
+               sala ? sala->nome : "A sala", conflito->descricao);
       resumo->conflitos++;
       continue;
     }
@@ -799,6 +858,7 @@ int importarPDF(Aplicacao *app, const char *caminho, Data inicio, Data fim,
   if (validas > 0) {
     if (!aplicacao_salvar_reservas(app, reservas, validas)) {
       free(reservas);
+      free(pendencias);
       // o arquivo foi lido; o problema foi gravar (nao e "formato invalido")
       return LEITOR_ERRO_SALVAR;
     }
@@ -806,7 +866,13 @@ int importarPDF(Aplicacao *app, const char *caminho, Data inicio, Data fim,
 
   resumo->importadas = validas;
 
+  // guarda o que ficou de fora para resolver depois (sem repetir)
+  int guardadas =
+      aplicacao_adicionar_pendencias(app, pendencias, quantidadePendencias);
+  resumo->pendentes = guardadas > 0 ? (size_t)guardadas : 0;
+
   free(reservas);
+  free(pendencias);
 
   return LEITOR_OK;
 }

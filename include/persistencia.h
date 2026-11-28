@@ -77,6 +77,16 @@ PersStatus pers_salvar_cancelamentos(const char *caminho, const Cancelamento *v,
 PersStatus pers_carregar_cancelamentos(const char *caminho, Cancelamento **v,
                                        size_t *n, PersRelatorio *rel);
 
+// ---- Pendencias da importacao ----
+// id;motivo;sala_pdf;detalhe;id_sala;atividade;recorrente;data;data_fim;
+// dia;inicio;fim;descricao;responsavel
+
+PersStatus pers_salvar_pendencias(const char *caminho, const Pendencia *v,
+                                  size_t n);
+
+PersStatus pers_carregar_pendencias(const char *caminho, Pendencia **v,
+                                    size_t *n, PersRelatorio *rel);
+
 // ---- Outras ----
 
 // Libera o vetor devolvido pelas funcoes pers_carregar_*. Aceita NULL.

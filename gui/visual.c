@@ -235,7 +235,13 @@ static const char *CSS_PALETA_CLARA =
     "window .tab-reservas row label.acao-importou { background: #f3eefc; "
     "color: #5b3fa0; }"
     "window .tab-reservas row.dia-historico label { color: #5b6b8a; "
-    "font-size: 12px; font-weight: 700; }";
+    "font-size: 12px; font-weight: 700; }"
+
+    /* Pendencias da importacao */
+    "window button.botao-pendencias { border-color: #d97706; }"
+    "window button.botao-pendencias label { color: #92400e; }"
+    "window label.pendencia-conflito { color: #9f1d24; }"
+    "window label.pendencia-sala { color: #92400e; }";
 
 void visual_aplicar(void) {
   registrar_provedor_css(CSS_ESTRUTURA_BASE, GTK_STYLE_PROVIDER_PRIORITY_USER);

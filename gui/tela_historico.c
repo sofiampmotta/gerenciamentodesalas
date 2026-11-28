@@ -46,7 +46,8 @@ static GtkWidget *etiqueta_acao(const char *acao) {
   else if (g_str_has_prefix(acao, "Editou") || g_str_has_prefix(acao, "Desfez"))
     gtk_widget_add_css_class(l, "acao-editou");
   else if (g_str_has_prefix(acao, "Excluiu") ||
-           g_str_has_prefix(acao, "Cancelou"))
+           g_str_has_prefix(acao, "Cancelou") ||
+           g_str_has_prefix(acao, "Descartou"))
     gtk_widget_add_css_class(l, "acao-excluiu");
   else
     gtk_widget_add_css_class(l, "acao-importou");

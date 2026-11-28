@@ -70,4 +70,20 @@ typedef struct cancelamento{
   char motivo[60];
 } Cancelamento;
 
+// Aula do PDF que nao entrou no sistema e espera alguem resolver.
+typedef enum {
+  PEND_CONFLITO,   // a sala ja tinha outra aula nesse horario
+  PEND_SEM_SALA,   // a sala do PDF nao esta cadastrada
+  PEND_SALA_VAZIA, // o proprio PDF nao informa a sala
+  QTD_MOTIVOS_PENDENCIA
+} MotivoPendencia;
+
+typedef struct pendencia{
+  int id;
+  MotivoPendencia motivo;
+  Reserva reserva;  // a aula como veio do PDF (idSala 0 se nao tem sala)
+  char salaPDF[64]; // nome da sala escrito no PDF
+  char detalhe[100]; // ex.: "I-03 ja tem CALCULO 1 - TC"
+} Pendencia;
+
 #endif

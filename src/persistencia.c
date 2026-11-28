@@ -33,6 +33,7 @@
 #define CAB_RESERVAS "#POLI-SALAS;RESERVAS;v3"
 #define CAB_RESERVAS_LEGADO "#POLI-SALAS;RESERVAS;v2"
 #define CAB_CANCELAMENTOS "#POLI-SALAS;CANCELAMENTOS;v1"
+#define CAB_PENDENCIAS "#POLI-SALAS;PENDENCIAS;v1"
 #define SEPARADOR ';'
 #define LINHA_MAX 1024
 // id;nome;capacidade;acessivel;projetor;televisao;computadores;local
@@ -42,6 +43,7 @@
 #define CAMPOS_RESERVA_V2 10
 // id_reserva;data;motivo
 #define CAMPOS_CANCELAMENTO 3
+#define CAMPOS_PENDENCIA 14
 #define CAMPOS_MAX 16
 #define MINUTOS_MAX 1439 // 23:59
 #define DATA_REFERENCIA_LEGADA 20261113
@@ -176,6 +178,35 @@ static int reservas_duplicadas(const void *x, const void *y) {
 static int cancelamento_valido(const Cancelamento *c) {
   return c->idReserva > 0 && !data_vazia(&c->data) && data_valida(&c->data) &&
          texto_valido(c->motivo, sizeof c->motivo, 1);
+}
+
+static const char *const NOMES_MOTIVO[] = {"CONFLITO", "SEM_SALA",
+                                           "SALA_VAZIA"};
+
+// A aula da pendencia ainda nao tem id nem, as vezes, sala; o resto precisa
+// estar certo para ela poder virar reserva depois.
+static int pendencia_valida(const Pendencia *p) {
+  const Reserva *r = &p->reserva;
+  if (p->id <= 0 || (int)p->motivo < 0 ||
+      (int)p->motivo >= QTD_MOTIVOS_PENDENCIA || r->idSala < 0)
+    return 0;
+  if ((int)r->atividade < 0 || (int)r->atividade >= QTD_ATIVIDADES ||
+      (int)r->horario.dia < 0 || (int)r->horario.dia >= QTD_DIAS)
+    return 0;
+  if (r->horario.comeco < 0 || r->horario.fim > 24 * 60 ||
+      r->horario.comeco >= r->horario.fim || !data_valida(&r->data))
+    return 0;
+  if (r->isRecorrente ? !data_valida(&r->dataFim) : !data_vazia(&r->dataFim))
+    return 0;
+  return texto_valido(r->descricao, sizeof r->descricao, 0) &&
+         texto_valido(r->responsavel, sizeof r->responsavel, 1) &&
+         texto_valido(p->salaPDF, sizeof p->salaPDF, 1) &&
+         texto_valido(p->detalhe, sizeof p->detalhe, 1);
+}
+
+static int pendencias_duplicadas(const void *x, const void *y) {
+  const Pendencia *a = x, *b = y;
+  return a->id == b->id;
 }
 
 // A mesma reserva nao pode ser cancelada duas vezes no mesmo dia
@@ -401,7 +432,35 @@ static int ler_cancelamento(char **c, int n, void *destino) {
          cancelamento_valido(x);
 }
 
-// ---- Carregar (serve para salas, reservas e cancelamentos) ----
+static int ler_pendencia(char **c, int n, void *destino) {
+  Pendencia *p = destino;
+  Reserva *r = &p->reserva;
+  int motivo, atividade, dia;
+  if (n != CAMPOS_PENDENCIA)
+    return 0;
+  memset(p, 0, sizeof *p);
+  if (!ler_inteiro(c[0], 1, INT_MAX, &p->id))
+    return 0;
+  motivo = ler_nome(c[1], NOMES_MOTIVO, QTD_MOTIVOS_PENDENCIA);
+  atividade = ler_nome(c[5], NOMES_ATIVIDADE, QTD_ATIVIDADES);
+  dia = ler_nome(c[9], NOMES_DIA, QTD_DIAS);
+  if (motivo < 0 || atividade < 0 || dia < 0)
+    return 0;
+  p->motivo = (MotivoPendencia)motivo;
+  r->atividade = (Atividade)atividade;
+  r->horario.dia = (Dia)dia;
+  return copiar_texto(p->salaPDF, sizeof p->salaPDF, c[2]) &&
+         copiar_texto(p->detalhe, sizeof p->detalhe, c[3]) &&
+         ler_inteiro(c[4], 0, INT_MAX, &r->idSala) &&
+         ler_bool(c[6], &r->isRecorrente) && ler_data(c[7], &r->data) &&
+         ler_data(c[8], &r->dataFim) && ler_hora(c[10], &r->horario.comeco) &&
+         ler_hora(c[11], &r->horario.fim) &&
+         copiar_texto(r->descricao, sizeof r->descricao, c[12]) &&
+         copiar_texto(r->responsavel, sizeof r->responsavel, c[13]) &&
+         pendencia_valida(p);
+}
+
+// ---- Carregar (serve para salas, reservas, cancelamentos e pendencias) ----
 
 typedef int (*LerRegistroFn)(char **campos, int n, void *destino);
 typedef int (*DuplicadoFn)(const void *a, const void *b);
@@ -563,6 +622,24 @@ static int escrever_cancelamento(FILE *f, const void *x) {
                  c->data.mes, c->data.dia, c->motivo);
 }
 
+static int escrever_pendencia(FILE *f, const void *x) {
+  const Pendencia *p = x;
+  const Reserva *r = &p->reserva;
+  char dataFim[16] = "";
+  if (!data_vazia(&r->dataFim))
+    snprintf(dataFim, sizeof dataFim, "%04d-%02d-%02d", r->dataFim.ano,
+             r->dataFim.mes, r->dataFim.dia);
+  return fprintf(f,
+                 "%d;%s;%s;%s;%d;%s;%d;%04d-%02d-%02d;%s;%s;%02d:%02d;"
+                 "%02d:%02d;%s;%s\n",
+                 p->id, NOMES_MOTIVO[p->motivo], p->salaPDF, p->detalhe,
+                 r->idSala, NOMES_ATIVIDADE[r->atividade],
+                 r->isRecorrente ? 1 : 0, r->data.ano, r->data.mes, r->data.dia,
+                 dataFim, NOMES_DIA[r->horario.dia], r->horario.comeco / 60,
+                 r->horario.comeco % 60, r->horario.fim / 60,
+                 r->horario.fim % 60, r->descricao, r->responsavel);
+}
+
 // Obriga os dados a irem para o disco agora
 static int sincronizar_disco(FILE *f) {
 #ifdef _WIN32
@@ -681,6 +758,7 @@ static int reserva_valida_v(const void *r) { return reserva_valida(r); }
 static int cancelamento_valido_v(const void *r) {
   return cancelamento_valido(r);
 }
+static int pendencia_valida_v(const void *p) { return pendencia_valida(p); }
 
 // ---- Funcoes do persistencia.h ----
 
@@ -729,6 +807,21 @@ PersStatus pers_carregar_cancelamentos(const char *caminho, Cancelamento **v,
   return carregar(caminho, CAB_CANCELAMENTOS, NULL, sizeof(Cancelamento),
                   ler_cancelamento, cancelamentos_duplicados, (void **)v, n,
                   rel);
+}
+
+PersStatus pers_salvar_pendencias(const char *caminho, const Pendencia *v,
+                                  size_t n) {
+  if (caminho == NULL || (v == NULL && n > 0))
+    return PERS_ERRO_PARAMETRO;
+  if (!vetor_valido(v, n, sizeof *v, pendencia_valida_v, pendencias_duplicadas))
+    return PERS_ERRO_DADO_INVALIDO;
+  return gravar(caminho, CAB_PENDENCIAS, v, n, sizeof *v, escrever_pendencia);
+}
+
+PersStatus pers_carregar_pendencias(const char *caminho, Pendencia **v,
+                                    size_t *n, PersRelatorio *rel) {
+  return carregar(caminho, CAB_PENDENCIAS, NULL, sizeof(Pendencia),
+                  ler_pendencia, pendencias_duplicadas, (void **)v, n, rel);
 }
 
 void pers_liberar(void *vetor) { free(vetor); }
