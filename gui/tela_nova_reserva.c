@@ -25,6 +25,7 @@ typedef struct {
   gboolean da_busca, pend_busca;
   int editando_id;
   GtkWidget *titulo_pag, *b_salvar_w;
+  GtkWidget *sugestoes, *lista_sugestoes; // nomes ja usados em Responsavel
 } TelaNova;
 
 static TelaNova *g_nova = NULL;
@@ -325,6 +326,120 @@ static GtkWidget *nova_linha_check(GtkWidget *caixa) {
   return l;
 }
 
+/* ---- Sugestao de nomes no campo Responsavel ----
+ * Ao digitar 3 letras ou mais, mostra ate 6 nomes que ja aparecem em outras
+ * reservas (a maioria veio do PDF). g_str_match_string ignora maiusculas e
+ * acentos e compara pelo inicio de cada palavra: "leni" acha "LENIN ...". */
+#define MAX_SUGESTOES 6
+
+static int comparar_nomes(gconstpointer a, gconstpointer b) {
+  return g_utf8_collate(*(const char *const *)a, *(const char *const *)b);
+}
+
+static void escolher_sugestao(TelaNova *t, GtkListBoxRow *linha) {
+  const char *nome = g_object_get_data(G_OBJECT(linha), "nome");
+  gtk_popover_popdown(GTK_POPOVER(t->sugestoes));
+  t->montando = TRUE; // evita abrir as sugestoes de novo
+  gtk_editable_set_text(GTK_EDITABLE(t->responsavel), nome);
+  gtk_editable_set_position(GTK_EDITABLE(t->responsavel), -1);
+  t->montando = FALSE;
+}
+
+static void ao_clicar_sugestao(GtkListBox *lista, GtkListBoxRow *linha,
+                               gpointer dados) {
+  (void)lista;
+  escolher_sugestao((TelaNova *)dados, linha);
+}
+
+static void ao_digitar_responsavel(GtkEditable *campo, gpointer dados) {
+  TelaNova *t = (TelaNova *)dados;
+  const char *texto = gtk_editable_get_text(campo);
+  gtk_popover_popdown(GTK_POPOVER(t->sugestoes));
+  if (t->montando || g_utf8_strlen(texto, -1) < 3)
+    return;
+
+  // junta os nomes que combinam, sem repetir
+  GHashTable *vistos = g_hash_table_new(g_str_hash, g_str_equal);
+  GPtrArray *nomes = g_ptr_array_new();
+  for (int i = 0; i < g_n_reservas; i++) {
+    const char *nome = g_reservas[i].responsavel;
+    if (nome[0] == '\0' || g_hash_table_contains(vistos, nome))
+      continue;
+    if (g_str_match_string(texto, nome, TRUE)) {
+      g_hash_table_add(vistos, (gpointer)nome);
+      g_ptr_array_add(nomes, (gpointer)nome);
+    }
+  }
+  g_ptr_array_sort(nomes, comparar_nomes);
+
+  // limpa a lista antiga
+  GtkWidget *filho;
+  while ((filho = gtk_widget_get_first_child(t->lista_sugestoes)) != NULL)
+    gtk_list_box_remove(GTK_LIST_BOX(t->lista_sugestoes), filho);
+
+  guint total = nomes->len < MAX_SUGESTOES ? nomes->len : MAX_SUGESTOES;
+  gboolean so_o_proprio =
+      nomes->len == 1 && g_ascii_strcasecmp(nomes->pdata[0], texto) == 0;
+  for (guint i = 0; i < total && !so_o_proprio; i++) {
+    GtkWidget *rotulo = gtk_label_new(nomes->pdata[i]);
+    gtk_label_set_xalign(GTK_LABEL(rotulo), 0);
+    GtkWidget *linha = gtk_list_box_row_new();
+    gtk_list_box_row_set_child(GTK_LIST_BOX_ROW(linha), rotulo);
+    // a linha nao pega o foco, para o cursor continuar no campo
+    gtk_widget_set_focusable(linha, FALSE);
+    g_object_set_data_full(G_OBJECT(linha), "nome", g_strdup(nomes->pdata[i]),
+                           g_free);
+    gtk_list_box_append(GTK_LIST_BOX(t->lista_sugestoes), linha);
+  }
+  if (total > 0 && !so_o_proprio)
+    gtk_popover_popup(GTK_POPOVER(t->sugestoes));
+
+  g_ptr_array_free(nomes, TRUE);
+  g_hash_table_destroy(vistos);
+}
+
+/* Enter no campo escolhe a primeira sugestao. */
+static void ao_enter_responsavel(GtkEntry *campo, gpointer dados) {
+  (void)campo;
+  TelaNova *t = (TelaNova *)dados;
+  if (!gtk_widget_get_visible(t->sugestoes))
+    return;
+  GtkListBoxRow *primeira =
+      gtk_list_box_get_row_at_index(GTK_LIST_BOX(t->lista_sugestoes), 0);
+  if (primeira)
+    escolher_sugestao(t, primeira);
+}
+
+static void ao_sair_responsavel(GtkEventControllerFocus *foco, gpointer dados) {
+  (void)foco;
+  gtk_popover_popdown(GTK_POPOVER(((TelaNova *)dados)->sugestoes));
+}
+
+static void criar_sugestoes(TelaNova *t) {
+  t->lista_sugestoes = gtk_list_box_new();
+  gtk_widget_set_focusable(t->lista_sugestoes, FALSE);
+  gtk_list_box_set_activate_on_single_click(GTK_LIST_BOX(t->lista_sugestoes),
+                                            TRUE);
+  g_signal_connect(t->lista_sugestoes, "row-activated",
+                   G_CALLBACK(ao_clicar_sugestao), t);
+
+  t->sugestoes = gtk_popover_new();
+  gtk_popover_set_child(GTK_POPOVER(t->sugestoes), t->lista_sugestoes);
+  gtk_popover_set_autohide(GTK_POPOVER(t->sugestoes), FALSE);
+  gtk_popover_set_has_arrow(GTK_POPOVER(t->sugestoes), FALSE);
+  gtk_popover_set_position(GTK_POPOVER(t->sugestoes), GTK_POS_BOTTOM);
+  gtk_widget_set_halign(t->sugestoes, GTK_ALIGN_START);
+  gtk_widget_set_parent(t->sugestoes, t->responsavel);
+
+  g_signal_connect(t->responsavel, "changed",
+                   G_CALLBACK(ao_digitar_responsavel), t);
+  g_signal_connect(t->responsavel, "activate",
+                   G_CALLBACK(ao_enter_responsavel), t);
+  GtkEventController *foco = gtk_event_controller_focus_new();
+  g_signal_connect(foco, "leave", G_CALLBACK(ao_sair_responsavel), t);
+  gtk_widget_add_controller(t->responsavel, foco);
+}
+
 GtkWidget *tela_nova_reserva_criar(Estado *e) {
   TelaNova *t = g_new0(TelaNova, 1);
   t->e = e;
@@ -359,6 +474,7 @@ GtkWidget *tela_nova_reserva_criar(Estado *e) {
   t->responsavel = gtk_entry_new();
   gtk_entry_set_max_length(GTK_ENTRY(t->atividade), 49);
   gtk_entry_set_max_length(GTK_ENTRY(t->responsavel), 60);
+  criar_sugestoes(t);
   t->tipo = gtk_drop_down_new_from_strings(TIPOS);
   t->sala = gtk_drop_down_new_from_strings(vazio);
   gtk_drop_down_set_enable_search(GTK_DROP_DOWN(t->sala), TRUE);
