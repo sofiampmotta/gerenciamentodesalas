@@ -4,8 +4,9 @@
 #include <string.h>
 
 /* Tutorial do primeiro uso: um balao que aponta para cada item do menu,
- * abrindo a tela correspondente. Aparece sozinho na primeira vez; depois
- * so pelo F1 ou pelo link "Ver o tutorial" na caixinha do nome. */
+ * abrindo a tela correspondente. Aparece sozinho uma vez para cada pessoa
+ * (cada nome usado em "Quem está usando?"); depois so pelo F1 ou pelo link
+ * "Ver o tutorial" na caixinha do nome. */
 
 typedef struct {
   const char *tela;   // tela que abre junto (NULL = fica onde esta)
@@ -73,7 +74,7 @@ static void estilo_tutorial(void) {
   g_object_unref(css);
 }
 
-// Arquivo que marca que o tutorial ja foi visto (mesma pasta de perfil.txt)
+// Lista de quem ja viu o tutorial, um nome por linha (pasta de perfil.txt)
 static void caminho_marca(char destino[512]) {
   Aplicacao *app = aplicacao_padrao();
   const char *perfil = app ? app->caminhoPerfil : "perfil.txt";
@@ -85,12 +86,46 @@ static void caminho_marca(char destino[512]) {
   snprintf(destino, 512, "%.*s%s", pasta, perfil, "tutorial_visto.txt");
 }
 
+static const char *usuario_atual(void) {
+  Aplicacao *app = aplicacao_padrao();
+  return app != NULL ? app->usuario : "";
+}
+
+// Compara nomes sem diferenciar maiusculas ("leidjane" = "Leidjane")
+static int mesmo_nome(const char *a, const char *b) {
+  char *x = g_utf8_casefold(a, -1), *y = g_utf8_casefold(b, -1);
+  g_strstrip(x);
+  g_strstrip(y);
+  int iguais = strcmp(x, y) == 0;
+  g_free(x);
+  g_free(y);
+  return iguais;
+}
+
+static int ja_viu(const char *nome) {
+  char caminho[512], linha[128];
+  caminho_marca(caminho);
+  FILE *f = fopen(caminho, "r");
+  if (f == NULL)
+    return 0;
+  int achou = 0;
+  while (!achou && fgets(linha, sizeof linha, f) != NULL) {
+    linha[strcspn(linha, "\r\n")] = '\0';
+    achou = mesmo_nome(linha, nome);
+  }
+  fclose(f);
+  return achou;
+}
+
 static void marcar_como_visto(void) {
+  const char *nome = usuario_atual();
+  if (nome[0] == '\0' || ja_viu(nome))
+    return;
   char caminho[512];
   caminho_marca(caminho);
-  FILE *f = fopen(caminho, "w");
+  FILE *f = fopen(caminho, "a");
   if (f != NULL) {
-    fputs("ok\n", f);
+    fprintf(f, "%s\n", nome);
     fclose(f);
   }
 }
@@ -236,9 +271,7 @@ static gboolean iniciar_depois(gpointer dados) {
 
 void tutorial_se_primeira_vez(Estado *e) {
   estilo_tutorial(); // o link "Ver o tutorial" usa o mesmo estilo
-  char caminho[512];
-  caminho_marca(caminho);
-  if (g_file_test(caminho, G_FILE_TEST_EXISTS))
+  if (ja_viu(usuario_atual()))
     return;
   // espera a janela aparecer para o balao saber onde apontar
   g_timeout_add(400, iniciar_depois, e);

@@ -141,6 +141,7 @@ static void ao_salvar_perfil(GtkWidget *w, gpointer dados) {
                               nome);
   interface_mensagem(p->e, msg, FALSE);
   g_free(msg);
+  tutorial_se_primeira_vez(p->e); // pessoa nova tambem ve o tutorial
 }
 
 static void ao_ver_tutorial(GtkButton *b, gpointer dados) {
